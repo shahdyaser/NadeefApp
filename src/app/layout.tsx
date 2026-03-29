@@ -10,6 +10,14 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Nadeef",
   description: "Home cleaning support tool powered by Supabase.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon.svg", sizes: "any" },
+    ],
+    apple: [{ url: "/icon.svg" }],
+    shortcut: ["/icon.svg"],
+  },
 };
 
 export default function RootLayout({
