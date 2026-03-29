@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
+import { getViewCache, setViewCache } from "@/lib/view-cache";
 
 type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
@@ -13,6 +14,15 @@ type TaskRow = Pick<
   "id" | "name" | "room_id" | "status" | "next_due_date" | "effort_points"
 >;
 type RoomType = Database["public"]["Enums"]["room_type"];
+type HomeCachePayload = {
+  house: HouseRow | null;
+  rooms: RoomRow[];
+  tasks: TaskRow[];
+  totalPoints: number;
+  streakDays: number;
+  canManageHome: boolean;
+};
+const HOME_CACHE_KEY = "home";
 
 const ROOM_MODAL_OPTIONS: Array<{ type: RoomType; label: string; icon: string }> = [
   { type: "bedroom", label: "Bedroom", icon: "🛏️" },
@@ -151,7 +161,7 @@ export default function HomePage() {
   const [roomType, setRoomType] = useState<RoomType>("other");
   const [roomIconRef, setRoomIconRef] = useState("");
 
-  async function loadHome() {
+  async function loadHome(background = false) {
     if (!supabaseClient) {
       setError(
         "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.",
@@ -160,7 +170,9 @@ export default function HomePage() {
       return;
     }
 
-    setLoading(true);
+    if (!background) {
+      setLoading(true);
+    }
     setError(null);
 
     const { data: sessionData, error: sessionError } =
@@ -263,11 +275,29 @@ export default function HomePage() {
     }
 
     setStreakDays(nextStreakDays);
+    setViewCache<HomeCachePayload>(HOME_CACHE_KEY, {
+      house: houseData,
+      rooms: roomData ?? [],
+      tasks: (taskData ?? []) as TaskRow[],
+      totalPoints: member.total_points ?? 0,
+      streakDays: nextStreakDays,
+      canManageHome: member.role === "owner" || member.role === "member",
+    });
     setLoading(false);
   }
 
   useEffect(() => {
-    void loadHome();
+    const cached = getViewCache<HomeCachePayload>(HOME_CACHE_KEY);
+    if (cached) {
+      setHouse(cached.house);
+      setRooms(cached.rooms);
+      setTasks(cached.tasks);
+      setTotalPoints(cached.totalPoints);
+      setStreakDays(cached.streakDays);
+      setCanManageHome(cached.canManageHome);
+      setLoading(false);
+    }
+    void loadHome(Boolean(cached));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

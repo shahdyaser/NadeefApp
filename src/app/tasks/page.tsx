@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
+import { getViewCache, setViewCache } from "@/lib/view-cache";
 
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Database["public"]["Tables"]["task"]["Row"];
@@ -106,6 +107,16 @@ type MemberProfile = {
   display_name: string | null;
   avatar_url: string | null;
 };
+type TasksCachePayload = {
+  userId: string | null;
+  tasksWithRoom: TaskWithRoom[];
+  memberProfiles: Record<string, MemberProfile>;
+  freshness: number;
+  doneToday: number;
+  dueToday: number;
+  overdue: number;
+};
+const TASKS_CACHE_KEY = "tasks";
 
 function initialsFromName(name: string) {
   return (
@@ -120,6 +131,10 @@ function initialsFromName(name: string) {
 
 export default function TasksPage() {
   const router = useRouter();
+  const cachedTasks = useMemo(
+    () => getViewCache<TasksCachePayload>(TASKS_CACHE_KEY),
+    [],
+  );
   const supabaseClient = useMemo(() => {
     try {
       return getSupabaseBrowserClient();
@@ -128,16 +143,18 @@ export default function TasksPage() {
     }
   }, []);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedTasks);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(cachedTasks?.userId ?? null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
-  const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>([]);
-  const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
-  const [freshness, setFreshness] = useState(0);
-  const [doneToday, setDoneToday] = useState(0);
-  const [dueToday, setDueToday] = useState(0);
-  const [overdue, setOverdue] = useState(0);
+  const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>(cachedTasks?.tasksWithRoom ?? []);
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>(
+    cachedTasks?.memberProfiles ?? {},
+  );
+  const [freshness, setFreshness] = useState(cachedTasks?.freshness ?? 0);
+  const [doneToday, setDoneToday] = useState(cachedTasks?.doneToday ?? 0);
+  const [dueToday, setDueToday] = useState(cachedTasks?.dueToday ?? 0);
+  const [overdue, setOverdue] = useState(cachedTasks?.overdue ?? 0);
 
   const loadTasks = useCallback(async () => {
       if (!supabaseClient) {
@@ -253,12 +270,26 @@ export default function TasksPage() {
       setDueToday(dueTodayCount);
       setOverdue(overdueCount);
       setDoneToday(doneTodayCount);
+      setViewCache<TasksCachePayload>(TASKS_CACHE_KEY, {
+        userId: uid,
+        tasksWithRoom: rows,
+        memberProfiles: Object.fromEntries((memberData ?? []).map((m) => [m.user_id, m])) as Record<
+          string,
+          MemberProfile
+        >,
+        freshness: freshnessValue,
+        doneToday: doneTodayCount,
+        dueToday: dueTodayCount,
+        overdue: overdueCount,
+      });
       setLoading(false);
   }, [router, supabaseClient]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadTasks();
+    const timer = window.setTimeout(() => {
+      void loadTasks();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadTasks]);
 
   async function handleNadeefTask(task: TaskRow) {

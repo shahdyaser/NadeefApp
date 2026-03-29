@@ -4,12 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getViewCache, setViewCache } from "@/lib/view-cache";
 
 type RankedMember = {
   userId: string;
   points: number;
   label: string;
   avatarUrl: string | null;
+};
+type LeaderboardCachePayload = {
+  globalMembers: RankedMember[];
+  homeMembers: RankedMember[];
 };
 
 function initialsFromName(name: string) {
@@ -41,6 +46,14 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     async function loadLeaderboard() {
+      const cacheKey = `leaderboard:${activeRange}`;
+      const cached = getViewCache<LeaderboardCachePayload>(cacheKey);
+      if (cached) {
+        setGlobalMembers(cached.globalMembers);
+        setHomeMembers(cached.homeMembers);
+        setLoading(false);
+      }
+
       if (!supabaseClient) {
         setError(
           "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.",
@@ -136,6 +149,10 @@ export default function LeaderboardPage() {
 
       setGlobalMembers(globalRanking);
       setHomeMembers(homeRanking);
+      setViewCache<LeaderboardCachePayload>(cacheKey, {
+        globalMembers: globalRanking,
+        homeMembers: homeRanking,
+      });
       setLoading(false);
     }
 

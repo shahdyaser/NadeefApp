@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
+import { getViewCache, setViewCache } from "@/lib/view-cache";
 
 type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type BridgeRow = Database["public"]["Tables"]["user_house_bridge"]["Row"];
@@ -13,6 +14,22 @@ type ProfileMember = Pick<
   BridgeRow,
   "user_id" | "role" | "display_name" | "avatar_url" | "total_points" | "current_streak_days"
 >;
+type ProfileCachePayload = {
+  currentUserId: string | null;
+  houseId: string | null;
+  isOwner: boolean;
+  displayName: string;
+  avatarUrl: string;
+  notificationsEnabled: boolean;
+  memberSince: string;
+  totalPoints: number;
+  rank: string;
+  streakDays: number;
+  inviteCode: string;
+  houseName: string;
+  members: ProfileMember[];
+};
+const PROFILE_CACHE_KEY = "profile";
 
 const APP_SIGNUP_URL = process.env.NEXT_PUBLIC_APP_SIGNUP_URL || "http://localhost:3000";
 
@@ -81,6 +98,24 @@ export default function ProfilePage() {
 
   useEffect(() => {
     async function loadProfile() {
+      const cached = getViewCache<ProfileCachePayload>(PROFILE_CACHE_KEY);
+      if (cached) {
+        setCurrentUserId(cached.currentUserId);
+        setHouseId(cached.houseId);
+        setIsOwner(cached.isOwner);
+        setDisplayName(cached.displayName);
+        setAvatarUrl(cached.avatarUrl);
+        setNotificationsEnabled(cached.notificationsEnabled);
+        setMemberSince(cached.memberSince);
+        setTotalPoints(cached.totalPoints);
+        setRank(cached.rank);
+        setStreakDays(cached.streakDays);
+        setInviteCode(cached.inviteCode);
+        setHouseName(cached.houseName);
+        setMembers(cached.members);
+        setLoading(false);
+      }
+
       if (!supabaseClient) {
         setError(
           "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.",
@@ -182,6 +217,32 @@ export default function ProfilePage() {
         const myIndex = (homeAllTime ?? []).findIndex((row) => row.user_id === user.id);
         setRank(myIndex >= 0 ? `#${myIndex + 1}` : "#-");
       }
+
+      setViewCache<ProfileCachePayload>(PROFILE_CACHE_KEY, {
+        currentUserId: user.id,
+        houseId: memberHouseId,
+        isOwner: house?.owner_id === user.id,
+        displayName: bridge?.display_name?.trim() || emailName,
+        avatarUrl: bridge?.avatar_url ?? "",
+        notificationsEnabled: bridge?.notifications_enabled ?? true,
+        memberSince: `Member since ${joinedAt}`,
+        totalPoints: Number((globalAllTime ?? []).find((row) => row.user_id === user.id)?.points ?? bridge?.total_points ?? 0),
+        rank:
+          !homeRankError
+            ? (() => {
+                const myIndex = (homeAllTime ?? []).findIndex((row) => row.user_id === user.id);
+                return myIndex >= 0 ? `#${myIndex + 1}` : "#-";
+              })()
+            : "#-",
+        streakDays: bridge?.current_streak_days ?? 0,
+        inviteCode: house?.invite_code ?? "NAD-000",
+        houseName: house?.name ?? "Your Home",
+        members: ((await supabaseClient
+          .from("user_house_bridge")
+          .select("user_id,role,display_name,avatar_url,total_points,current_streak_days")
+          .eq("house_id", memberHouseId)
+          .order("created_at", { ascending: true })).data ?? []) as ProfileMember[],
+      });
 
       setLoading(false);
     }
