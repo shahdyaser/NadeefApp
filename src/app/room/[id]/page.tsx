@@ -11,12 +11,14 @@ type TaskRow = Database["public"]["Tables"]["task"]["Row"];
 type RoomType = Database["public"]["Enums"]["room_type"];
 type PeriodWindow = "today" | "week" | "month";
 type AssignmentMode = "together" | "round_robin";
+type TaskEntryMode = "library" | "custom";
 type MemberOption = {
   userId: string;
   label: string;
   initials: string;
   avatarUrl: string | null;
 };
+type TaskLibraryRow = Database["public"]["Tables"]["task_library"]["Row"];
 
 const ROOM_EMOJI: Record<RoomType, string> = {
   kitchen: "🍽️",
@@ -36,7 +38,7 @@ const EFFORT_TO_POINTS = {
   2: 20,
   3: 30,
 } as const;
-const SWIPE_ACTION_WIDTH = 136;
+const SWIPE_ACTION_WIDTH = 204;
 type TaskListFilter = "all" | "done_today" | "due_today" | "overdue";
 
 function wait(ms: number) {
@@ -203,10 +205,14 @@ export default function RoomDetailPage() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [roomsInHouse, setRoomsInHouse] = useState<RoomRow[]>([]);
   const [membersInHouse, setMembersInHouse] = useState<MemberOption[]>([]);
+  const [taskLibrary, setTaskLibrary] = useState<TaskLibraryRow[]>([]);
   const [canManageTasks, setCanManageTasks] = useState(false);
 
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showEditRoom, setShowEditRoom] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [editRoomName, setEditRoomName] = useState("");
+  const [editRoomIconRef, setEditRoomIconRef] = useState("");
   const [taskName, setTaskName] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("");
   const [startingDueDate, setStartingDueDate] = useState("");
@@ -217,7 +223,10 @@ export default function RoomDetailPage() {
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>("together");
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
-  const [effortStars, setEffortStars] = useState<1 | 2 | 3>(2);
+  const [effortStars, setEffortStars] = useState<1 | 2 | 3>(1);
+  const [taskEntryMode, setTaskEntryMode] = useState<TaskEntryMode>("library");
+  const [taskLibrarySearch, setTaskLibrarySearch] = useState("");
+  const [selectedLibraryTaskId, setSelectedLibraryTaskId] = useState<string | null>(null);
   const [activeActionTaskId, setActiveActionTaskId] = useState<string | null>(null);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -323,6 +332,11 @@ export default function RoomDetailPage() {
       return;
     }
 
+    const { data: libraryData } = await supabaseClient
+      .from("task_library")
+      .select("*")
+      .order("name", { ascending: true });
+
     setRoom(roomData);
     setHouseName(houseData.name);
     setHouseOwnerId(houseData.owner_id ?? null);
@@ -352,6 +366,7 @@ export default function RoomDetailPage() {
       };
     });
     setMembersInHouse(memberOptions);
+    setTaskLibrary((libraryData ?? []) as TaskLibraryRow[]);
     setLoading(false);
   }
 
@@ -383,16 +398,28 @@ export default function RoomDetailPage() {
       return;
     }
 
-    const frequencyDays =
-      frequencyUnit === "days"
+    const selectedLibraryTask =
+      taskEntryMode === "library" && !editingTask
+        ? taskLibrary.find((entry) => entry.id === selectedLibraryTaskId) ??
+          taskLibrary.find(
+            (entry) =>
+              entry.name.trim().toLowerCase() === taskName.trim().toLowerCase(),
+          )
+        : null;
+
+    const frequencyDays = selectedLibraryTask
+      ? selectedLibraryTask.default_frequency_days
+      : frequencyUnit === "days"
         ? frequencyValue
         : frequencyUnit === "weeks"
           ? frequencyValue * 7
           : frequencyValue * 30;
+    const effectiveEffortStars = selectedLibraryTask
+      ? (Math.max(1, Math.min(3, selectedLibraryTask.default_effort)) as 1 | 2 | 3)
+      : effortStars;
 
     const nextDue = new Date();
     nextDue.setDate(nextDue.getDate() + frequencyDays);
-    const nowIso = new Date().toISOString();
 
     setSaving(true);
 
@@ -404,7 +431,7 @@ export default function RoomDetailPage() {
         assigned_user_ids: selectedAssigneeIds,
         assignment_mode: assignmentMode,
         frequency_days: frequencyDays,
-        effort_points: EFFORT_TO_POINTS[effortStars],
+        effort_points: EFFORT_TO_POINTS[effectiveEffortStars],
       };
 
       if (!editingTask.next_due_date) {
@@ -435,8 +462,8 @@ export default function RoomDetailPage() {
         assignment_mode: assignmentMode,
         name: taskName.trim(),
         frequency_days: frequencyDays,
-        effort_points: EFFORT_TO_POINTS[effortStars],
-        last_completed_at: nowIso,
+        effort_points: EFFORT_TO_POINTS[effectiveEffortStars],
+        last_completed_at: null,
         next_due_date: startingDueDate,
         status: "active",
       });
@@ -458,7 +485,10 @@ export default function RoomDetailPage() {
     setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : [userId]);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
-    setEffortStars(2);
+    setEffortStars(1);
+    setTaskEntryMode("library");
+    setTaskLibrarySearch("");
+    setSelectedLibraryTaskId(null);
     setEditingTask(null);
     setShowAddTask(false);
     await loadRoomData();
@@ -491,6 +521,77 @@ export default function RoomDetailPage() {
 
     setActiveActionTaskId(null);
     setMessage("Task skipped. Due date moved forward with no points awarded.");
+    await loadRoomData();
+  }
+
+  async function handleDeleteTask(task: TaskRow) {
+    if (!supabaseClient) return;
+    if (!canManageTasks) {
+      setError("Helpers can only view and mark tasks as done.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+
+    const confirmed = window.confirm(`Delete "${task.name}"? This will also remove its history.`);
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabaseClient
+      .from("task")
+      .delete()
+      .eq("id", task.id);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    setActiveActionTaskId(null);
+    setMessage("Task deleted.");
+    await loadRoomData();
+  }
+
+  function openEditRoomModal() {
+    if (!room || !canManageTasks) {
+      setError("Helpers can only view and mark tasks as done.");
+      return;
+    }
+    setEditRoomName(room.name);
+    setEditRoomIconRef(room.icon_ref ?? "");
+    setShowEditRoom(true);
+  }
+
+  async function handleSaveRoomEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabaseClient || !room) return;
+    if (!canManageTasks) {
+      setError("Helpers can only view and mark tasks as done.");
+      return;
+    }
+    if (!editRoomName.trim()) {
+      setError("Room name cannot be empty.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    const { error: updateError } = await supabaseClient
+      .from("room")
+      .update({
+        name: editRoomName.trim(),
+        icon_ref: editRoomIconRef.trim() || null,
+      })
+      .eq("id", room.id);
+    setSaving(false);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setShowEditRoom(false);
+    setMessage("Room updated.");
     await loadRoomData();
   }
 
@@ -535,7 +636,10 @@ export default function RoomDetailPage() {
     setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : userId ? [userId] : []);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
-    setEffortStars(2);
+    setEffortStars(1);
+    setTaskEntryMode("library");
+    setTaskLibrarySearch("");
+    setSelectedLibraryTaskId(null);
     setShowAddTask(true);
   }
 
@@ -573,6 +677,9 @@ export default function RoomDetailPage() {
     );
     setShowAssigneeMenu(false);
     setEffortStars(Math.max(1, Math.min(3, Math.round(task.effort_points / 10))) as 1 | 2 | 3);
+    setTaskEntryMode("custom");
+    setTaskLibrarySearch(task.name);
+    setSelectedLibraryTaskId(null);
     setShowAddTask(true);
   }
 
@@ -584,6 +691,17 @@ export default function RoomDetailPage() {
       }
       return [...prev, userIdValue];
     });
+  }
+
+  function applyLibraryTaskSelection(entry: TaskLibraryRow) {
+    setTaskName(entry.name);
+    setTaskLibrarySearch(entry.name);
+    setSelectedLibraryTaskId(entry.id);
+    setFrequencyUnit("days");
+    setFrequencyValue(Math.max(1, entry.default_frequency_days));
+    setEffortStars(
+      Math.max(1, Math.min(3, entry.default_effort)) as 1 | 2 | 3,
+    );
   }
 
   function handleTaskPointerDown(taskId: string, clientX: number) {
@@ -703,16 +821,34 @@ export default function RoomDetailPage() {
     }
     return true;
   });
+  const libraryQuery = taskLibrarySearch.trim().toLowerCase();
+  const filteredLibraryTasks = taskLibrary
+    .filter((entry) => {
+      if (!libraryQuery) return true;
+      return entry.name.toLowerCase().includes(libraryQuery);
+    })
+    .slice(0, 8);
 
   return (
     <main className="min-h-screen bg-[#f7f9fb] pb-24 text-[#191c1e]">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white/90 px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white/90 px-4 sm:px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <Link href="/home" className="text-sm font-semibold text-teal-700">
             ← {houseName}
           </Link>
         </div>
-        <p className="text-base font-bold text-slate-900">{room.name}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-base font-bold text-slate-900">{room.name}</p>
+          {canManageTasks && (
+            <button
+              type="button"
+              onClick={openEditRoomModal}
+              className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-teal-700"
+            >
+              Edit
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={openAddTaskModal}
@@ -727,7 +863,7 @@ export default function RoomDetailPage() {
         </button>
       </header>
 
-      <section className="mx-auto w-full max-w-xl space-y-6 px-6 pt-6">
+      <section className="mx-auto w-full max-w-xl space-y-6 px-4 pt-6 sm:px-6">
         {error && (
           <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
@@ -943,23 +1079,30 @@ export default function RoomDetailPage() {
             return (
               <div key={task.id} className="relative overflow-hidden rounded-2xl">
                 {canManageTasks ? (
-                  <div className="absolute inset-y-0 right-0 flex w-[136px]">
+                  <div className="absolute inset-y-0 right-0 flex w-[204px]">
                     <button
                       type="button"
                       onClick={() => {
                         setActiveActionTaskId(null);
                         openEditTaskModal(task);
                       }}
-                      className="flex w-1/2 items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white"
+                      className="flex w-1/3 items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white"
                     >
                       Edit
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleSkipTask(task)}
-                      className="flex w-1/2 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
+                      className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
                     >
                       Skip
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteTask(task)}
+                      className="flex w-1/3 items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white"
+                    >
+                      Delete
                     </button>
                   </div>
                 ) : null}
@@ -1064,7 +1207,7 @@ export default function RoomDetailPage() {
 
             <form
               onSubmit={handleCreateTask}
-              className="hide-scrollbar max-h-[82vh] space-y-8 overflow-y-auto px-8 pb-10 pt-4"
+              className="hide-scrollbar max-h-[82vh] space-y-8 overflow-y-auto px-5 pb-10 pt-4 sm:px-8"
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold tracking-tight text-slate-900">
@@ -1080,6 +1223,72 @@ export default function RoomDetailPage() {
               </div>
 
               <div className="space-y-3">
+                {!editingTask && (
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Task Source
+                    </p>
+                    <div className="inline-flex rounded-full bg-slate-200 p-1">
+                      <button
+                        type="button"
+                        onClick={() => setTaskEntryMode("library")}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          taskEntryMode === "library"
+                            ? "bg-teal-700 text-white"
+                            : "text-slate-600"
+                        }`}
+                      >
+                        Search Library
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskEntryMode("custom")}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          taskEntryMode === "custom"
+                            ? "bg-teal-700 text-white"
+                            : "text-slate-600"
+                        }`}
+                      >
+                        Custom Task
+                      </button>
+                    </div>
+
+                    {taskEntryMode === "library" && (
+                      <div className="space-y-2">
+                        <input
+                          value={taskLibrarySearch}
+                          onChange={(event) => {
+                            setTaskLibrarySearch(event.target.value);
+                            setSelectedLibraryTaskId(null);
+                          }}
+                          placeholder="Search task library (vacuum, sink, mop...)"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-400"
+                        />
+                        <div className="space-y-1">
+                          {filteredLibraryTasks.map((entry) => (
+                            <button
+                              key={entry.id}
+                              type="button"
+                              onClick={() => applyLibraryTaskSelection(entry)}
+                              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:border-teal-300"
+                            >
+                              <span className="text-sm font-medium text-slate-700">{entry.name}</span>
+                              <span className="text-[10px] font-semibold text-slate-500">
+                                Every {entry.default_frequency_days}d - Effort {entry.default_effort}
+                              </span>
+                            </button>
+                          ))}
+                          {!filteredLibraryTasks.length && (
+                            <p className="text-xs text-slate-500">
+                              No library match. Switch to custom task.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
                   Task Name
                 </label>
@@ -1330,6 +1539,56 @@ export default function RoomDetailPage() {
             </form>
           </section>
         </>
+      )}
+
+      {showEditRoom && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSaveRoomEdit}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.2)]"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Edit Room</h3>
+              <button
+                type="button"
+                onClick={() => setShowEditRoom(false)}
+                className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Room Name
+              </span>
+              <input
+                required
+                value={editRoomName}
+                onChange={(event) => setEditRoomName(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+                placeholder="Room name"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Icon (emoji)
+              </span>
+              <input
+                value={editRoomIconRef}
+                onChange={(event) => setEditRoomIconRef(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+                placeholder="e.g. 🛏️"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-xl bg-teal-700 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save Room"}
+            </button>
+          </form>
+        </div>
       )}
     </main>
   );

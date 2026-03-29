@@ -352,7 +352,7 @@ export default function TasksPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fb] font-sans text-[#191c1e]">
       <header className="fixed top-0 z-50 w-full bg-[#f7f9fb]/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="text-teal-600">☰</span>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900">All Tasks</h1>

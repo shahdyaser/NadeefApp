@@ -146,6 +146,7 @@ export default function HomePage() {
   const [canManageHome, setCanManageHome] = useState(false);
 
   const [showAddRoom, setShowAddRoom] = useState(false);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
   const [roomType, setRoomType] = useState<RoomType>("other");
   const [roomIconRef, setRoomIconRef] = useState("");
@@ -301,6 +302,53 @@ export default function HomePage() {
     await loadHome();
   }
 
+  function openAddRoomModal() {
+    setEditingRoomId(null);
+    setRoomName("");
+    setRoomType("other");
+    setRoomIconRef("");
+    setShowAddRoom(true);
+  }
+
+  async function handleSaveRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (editingRoomId) {
+      setError(null);
+      setMessage(null);
+      if (!supabaseClient) return;
+      if (!canManageHome) {
+        setError("Helpers can only view and complete tasks.");
+        return;
+      }
+
+      setSaving(true);
+      const { error: updateError } = await supabaseClient
+        .from("room")
+        .update({
+          name: roomName.trim(),
+          type: roomType,
+          icon_ref: roomIconRef.trim() || null,
+        })
+        .eq("id", editingRoomId);
+      setSaving(false);
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      setShowAddRoom(false);
+      setEditingRoomId(null);
+      setRoomName("");
+      setRoomIconRef("");
+      setMessage("Room updated.");
+      await loadHome();
+      return;
+    }
+
+    await handleAddRoom(event);
+  }
+
   async function handleToggleTravelMode() {
     if (!supabaseClient || !house || travelSaving) return;
 
@@ -383,7 +431,7 @@ export default function HomePage() {
 
   const roomFreshnessValues = rooms.map((room) =>
     getFreshnessFromTasks(
-      scopedActiveTasks.filter((task) => task.room_id === room.id),
+      activeTasks.filter((task) => task.room_id === room.id),
       today,
     ),
   );
@@ -397,7 +445,7 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#f7f9fb] pb-24 text-[#191c1e]">
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between bg-white/90 px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between bg-white/90 px-4 sm:px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
         <div className="flex items-center gap-2">
           <span className="text-teal-600">🌊</span>
           <h1 className="text-2xl font-bold tracking-tight text-teal-700">
@@ -424,7 +472,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="mx-auto w-full max-w-xl space-y-6 px-6 pt-6">
+      <section className="mx-auto w-full max-w-xl space-y-6 px-4 pt-6 sm:px-6">
         {showTravelNotice && (
           <p className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800">
             Travel mode is on and all tasks are paused till it turns off.
@@ -532,7 +580,7 @@ export default function HomePage() {
 
           <button
             type="button"
-            onClick={() => setShowAddRoom((prev) => !prev)}
+            onClick={openAddRoomModal}
             disabled={!canManageHome}
             className={`flex min-h-[165px] flex-col items-center justify-center rounded-2xl border p-4 text-center shadow-[0_20px_40px_-12px_rgba(25,28,30,0.04)] ${
               canManageHome
@@ -577,23 +625,26 @@ export default function HomePage() {
       {showAddRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#191c1e]/20 p-4 backdrop-blur-sm">
           <form
-            onSubmit={handleAddRoom}
+            onSubmit={handleSaveRoom}
             className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-[0_20px_40px_-12px_rgba(25,28,30,0.12)]"
           >
-            <div className="flex items-center justify-between px-8 pb-4 pt-8">
+            <div className="flex items-center justify-between px-5 pb-4 pt-6 sm:px-8 sm:pt-8">
               <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                Add New Room
+                {editingRoomId ? "Edit Room" : "Add New Room"}
               </h2>
               <button
                 type="button"
-                onClick={() => setShowAddRoom(false)}
+                onClick={() => {
+                  setShowAddRoom(false);
+                  setEditingRoomId(null);
+                }}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100"
               >
                 ✕
               </button>
             </div>
 
-            <div className="max-h-[62vh] space-y-8 overflow-y-auto px-8 py-4">
+            <div className="max-h-[62vh] space-y-8 overflow-y-auto px-5 py-4 sm:px-8">
               <div className="space-y-2">
                 <label className="text-sm font-semibold uppercase tracking-wide text-orange-700">
                   Room Name
@@ -635,32 +686,15 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold uppercase tracking-wide text-orange-700">
-                    Initial Freshness
-                  </label>
-                  <span className="rounded-full bg-amber-200 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-900">
-                    75% Fresh
-                  </span>
-                </div>
-                <div className="relative pb-6 pt-2">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                    <div className="h-full w-[75%] rounded-full bg-gradient-to-r from-teal-700 to-teal-400" />
-                  </div>
-                  <div className="absolute left-[75%] top-0 -ml-3 h-6 w-6 rounded-full border-4 border-teal-700 bg-white shadow-lg" />
-                  <div className="mt-3 flex justify-between px-1 text-[10px] font-medium uppercase text-slate-400">
-                    <span>Needs Attention</span>
-                    <span>Pristine</span>
-                  </div>
-                </div>
-              </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-slate-100 p-8">
+            <div className="flex items-center gap-4 bg-slate-100 p-5 sm:p-8">
               <button
                 type="button"
-                onClick={() => setShowAddRoom(false)}
+                onClick={() => {
+                  setShowAddRoom(false);
+                  setEditingRoomId(null);
+                }}
                 className="flex-1 rounded-full py-4 font-semibold text-slate-500 transition-all hover:bg-slate-200"
               >
                 Cancel
@@ -670,7 +704,7 @@ export default function HomePage() {
                 disabled={saving}
                 className="flex-[2] rounded-full bg-gradient-to-br from-teal-700 to-teal-400 py-4 font-bold text-white shadow-[0_10px_20px_-5px_rgba(0,107,95,0.3)] transition-all disabled:opacity-60"
               >
-                {saving ? "Adding..." : "Add Room"}
+                {saving ? (editingRoomId ? "Saving..." : "Adding...") : editingRoomId ? "Save Room" : "Add Room"}
               </button>
             </div>
           </form>

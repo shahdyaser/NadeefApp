@@ -335,7 +335,7 @@ export default function CompletedTasksPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f9fb] pb-24 text-[#191c1e]">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white/90 px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white/90 px-4 sm:px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
         <Link href="/home" className="text-sm font-semibold text-teal-700">
           ← Home
         </Link>
@@ -343,7 +343,7 @@ export default function CompletedTasksPage() {
         <span className="text-xs font-semibold text-amber-700">{totalPointsEarned} pts</span>
       </header>
 
-      <section className="mx-auto w-full max-w-xl space-y-5 px-6 pt-6">
+      <section className="mx-auto w-full max-w-xl space-y-5 px-4 pt-6 sm:px-6">
         {error && (
           <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}

@@ -204,6 +204,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      task_library: {
+        Row: {
+          id: string;
+          room_template: string;
+          name: string;
+          default_frequency_days: number;
+          default_effort: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          room_template: string;
+          name: string;
+          default_frequency_days?: number;
+          default_effort?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          room_template?: string;
+          name?: string;
+          default_frequency_days?: number;
+          default_effort?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
