@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nadeef - Add Room</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-primary-container": "#00574d",
+                        "on-surface": "#191c1e",
+                        "surface": "#f7f9fb",
+                        "on-tertiary-fixed-variant": "#524600",
+                        "primary": "#006b5f",
+                        "error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#005047",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#5c2400",
+                        "error": "#ba1a1a",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#00201c",
+                        "on-tertiary-container": "#594c00",
+                        "secondary-fixed": "#ffdbca",
+                        "secondary": "#9d4300",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-tertiary-fixed": "#211b00",
+                        "inverse-surface": "#2d3133",
+                        "surface-tint": "#006b5f",
+                        "tertiary-fixed": "#ffe24c",
+                        "surface-container": "#eceef0",
+                        "primary-fixed-dim": "#3cddc7",
+                        "primary-container": "#2dd4bf",
+                        "outline": "#6b7a76",
+                        "on-background": "#191c1e",
+                        "surface-container-low": "#f2f4f6",
+                        "secondary-container": "#fd761a",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#3c4a46",
+                        "on-secondary-fixed": "#341100",
+                        "surface-container-high": "#e6e8ea",
+                        "secondary-fixed-dim": "#ffb690",
+                        "surface-bright": "#f7f9fb",
+                        "on-error": "#ffffff",
+                        "tertiary": "#6d5e00",
+                        "background": "#f7f9fb",
+                        "surface-dim": "#d8dadc",
+                        "primary-fixed": "#62fae3",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#e2c62d",
+                        "inverse-primary": "#3cddc7",
+                        "outline-variant": "#bacac5",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-container": "#d8bd23",
+                        "on-secondary-fixed-variant": "#783200"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "3xl": "1.5rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen">
+<!-- Dashboard Background (Simulated) -->
+<div class="fixed inset-0 z-0 overflow-y-auto filter blur-md grayscale-[0.2] opacity-50">
+<!-- TopAppBar Placeholder -->
+<header class="bg-white/80 backdrop-blur-xl shadow-none px-6 py-4 flex justify-between items-center w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-teal-700 text-2xl" data-icon="waves">waves</span>
+<span class="text-2xl font-bold text-teal-700 tracking-tighter">Nadeef</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-slate-200"></div>
+</header>
+<main class="max-w-7xl mx-auto p-6 space-y-8">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="h-48 bg-white rounded-3xl"></div>
+<div class="h-48 bg-white rounded-3xl"></div>
+<div class="h-48 bg-white rounded-3xl"></div>
+</div>
+</main>
+</div>
+<!-- Modal Overlay -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-surface/20 backdrop-blur-sm">
+<!-- Add Room Modal Content -->
+<div class="bg-surface-container-lowest w-full max-w-lg rounded-3xl shadow-[0_20px_40px_-12px_rgba(25,28,30,0.12)] overflow-hidden flex flex-col transform transition-all">
+<!-- Modal Header -->
+<div class="px-8 pt-8 pb-4 flex justify-between items-center">
+<h2 class="text-2xl font-extrabold text-on-surface tracking-tight">Add New Room</h2>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+<!-- Modal Body -->
+<div class="px-8 py-4 space-y-8 overflow-y-auto max-h-[618px]">
+<!-- Room Name Input -->
+<div class="space-y-2">
+<label class="text-sm font-semibold text-secondary tracking-wide uppercase">Room Name</label>
+<input class="w-full bg-surface-container-low border-none rounded-2xl px-6 py-4 text-on-surface focus:ring-2 focus:ring-primary-container transition-all placeholder:text-on-surface-variant/40" placeholder="e.g. Master Suite" type="text"/>
+</div>
+<!-- Icon Selector -->
+<div class="space-y-4">
+<label class="text-sm font-semibold text-secondary tracking-wide uppercase">Select Room Type</label>
+<div class="grid grid-cols-4 gap-4">
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-teal-50 text-teal-700 ring-2 ring-primary-container transition-all">
+<span class="material-symbols-outlined text-3xl mb-1" data-icon="bed">bed</span>
+<span class="text-[10px] font-bold uppercase">Bedroom</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="bathtub">bathtub</span>
+<span class="text-[10px] font-bold uppercase">Bath</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="cooking">cooking</span>
+<span class="text-[10px] font-bold uppercase">Kitchen</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="chair">chair</span>
+<span class="text-[10px] font-bold uppercase">Living</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="local_laundry_service">local_laundry_service</span>
+<span class="text-[10px] font-bold uppercase">Laundry</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="laptop_mac">laptop_mac</span>
+<span class="text-[10px] font-bold uppercase">Office</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="deck">deck</span>
+<span class="text-[10px] font-bold uppercase">Patio</span>
+</button>
+<button class="flex flex-col items-center justify-center p-4 rounded-2xl bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-all group">
+<span class="material-symbols-outlined text-3xl mb-1 group-hover:text-primary transition-colors" data-icon="more_horiz">more_horiz</span>
+<span class="text-[10px] font-bold uppercase">Other</span>
+</button>
+</div>
+</div>
+<!-- Cleanliness Slider -->
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<label class="text-sm font-semibold text-secondary tracking-wide uppercase">Initial Freshness</label>
+<span class="bg-tertiary-fixed text-on-tertiary-fixed-variant px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase">75% Fresh</span>
+</div>
+<div class="relative pt-2 pb-6">
+<div class="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary to-primary-container w-[75%] rounded-full shadow-[0_0_15px_rgba(45,212,191,0.4)]"></div>
+</div>
+<div class="absolute top-0 left-[75%] -ml-3 w-6 h-6 bg-white border-4 border-primary rounded-full shadow-lg"></div>
+<div class="flex justify-between mt-3 px-1">
+<span class="text-[10px] font-medium text-on-surface-variant/60 uppercase">Needs Attention</span>
+<span class="text-[10px] font-medium text-on-surface-variant/60 uppercase">Pristine</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Modal Actions -->
+<div class="p-8 bg-surface-container-low flex items-center gap-4">
+<button class="flex-1 py-4 text-on-surface-variant font-semibold hover:bg-surface-container-high rounded-full transition-all active:scale-95">
+                    Cancel
+                </button>
+<button class="flex-[2] py-4 bg-gradient-to-br from-primary to-primary-container text-white font-bold rounded-full shadow-[0_10px_20px_-5px_rgba(0,107,95,0.3)] hover:shadow-[0_15px_30px_-5px_rgba(0,107,95,0.4)] transition-all active:scale-95 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-xl" data-icon="add_circle">add_circle</span>
+                    Add Room
+                </button>
+</div>
+</div>
+</div>
+<!-- Background Decoration -->
+<div class="fixed top-0 right-0 -z-10 w-96 h-96 bg-primary-fixed-dim/10 blur-[120px] rounded-full"></div>
+<div class="fixed bottom-0 left-0 -z-10 w-[30rem] h-[30rem] bg-secondary-fixed/5 blur-[150px] rounded-full"></div>
+</body></html>

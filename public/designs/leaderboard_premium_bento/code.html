@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#783200",
+              "on-secondary-fixed": "#341100",
+              "primary-container": "#2dd4bf",
+              "error-container": "#ffdad6",
+              "surface-tint": "#006b5f",
+              "on-tertiary-fixed": "#211b00",
+              "on-primary-fixed": "#00201c",
+              "on-secondary-container": "#5c2400",
+              "surface": "#f7f9fb",
+              "surface-container-low": "#f2f4f6",
+              "on-tertiary": "#ffffff",
+              "inverse-on-surface": "#eff1f3",
+              "secondary-container": "#fd761a",
+              "outline-variant": "#bacac5",
+              "surface-dim": "#d8dadc",
+              "surface-variant": "#e0e3e5",
+              "secondary-fixed-dim": "#ffb690",
+              "on-secondary": "#ffffff",
+              "on-primary-fixed-variant": "#005047",
+              "on-error-container": "#93000a",
+              "error": "#ba1a1a",
+              "primary-fixed-dim": "#3cddc7",
+              "tertiary-container": "#d8bd23",
+              "surface-container-lowest": "#ffffff",
+              "primary-fixed": "#62fae3",
+              "inverse-primary": "#3cddc7",
+              "surface-bright": "#f7f9fb",
+              "tertiary-fixed-dim": "#e2c62d",
+              "surface-container": "#eceef0",
+              "tertiary": "#6d5e00",
+              "outline": "#6b7a76",
+              "surface-container-high": "#e6e8ea",
+              "on-surface-variant": "#3c4a46",
+              "tertiary-fixed": "#ffe24c",
+              "secondary": "#9d4300",
+              "primary": "#006b5f",
+              "on-primary-container": "#00574d",
+              "background": "#f7f9fb",
+              "on-surface": "#191c1e",
+              "on-error": "#ffffff",
+              "on-background": "#191c1e",
+              "inverse-surface": "#2d3133",
+              "surface-container-highest": "#e0e3e5",
+              "on-tertiary-container": "#594c00",
+              "on-primary": "#ffffff",
+              "secondary-fixed": "#ffdbca",
+              "on-tertiary-fixed-variant": "#524600"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "3xl": "1.5rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-effect {
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f7f9fb;
+      }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="text-on-surface bg-surface min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+<div class="flex items-center justify-between px-6 h-16 w-full max-w-7xl mx-auto">
+<button class="text-teal-600 dark:text-teal-400 hover:opacity-80 transition-opacity active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-['Inter'] font-semibold tracking-tight text-slate-900 dark:text-slate-50">Leaderboard</h1>
+<div class="w-6"></div> <!-- Spacer for centering -->
+</div>
+</header>
+<main class="pt-24 px-6 max-w-2xl mx-auto space-y-8">
+<!-- Time Range Pills -->
+<div class="flex justify-center gap-2">
+<button class="px-6 py-2 rounded-full bg-primary text-on-primary text-sm font-medium shadow-sm transition-all">Weekly</button>
+<button class="px-6 py-2 rounded-full bg-surface-container-low text-on-surface-variant text-sm font-medium hover:bg-surface-container-high transition-all">Monthly</button>
+<button class="px-6 py-2 rounded-full bg-surface-container-low text-on-surface-variant text-sm font-medium hover:bg-surface-container-high transition-all">All-time</button>
+</div>
+<!-- Podium Section (Top 3) -->
+<section class="grid grid-cols-3 gap-4 items-end pt-8 pb-4">
+<!-- 2nd Place -->
+<div class="flex flex-col items-center gap-3">
+<div class="relative">
+<div class="w-16 h-16 rounded-full border-4 border-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="portrait of a young man with short brown hair smiling gently in soft outdoor lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB5u6wqbbPk8tIsR4XbUQp5YTeNngD06KOWkqZDX9x1xDWl4M2l-FqcBXG2XnY-d83GDz2WBdHUbOh4SvKVM9-0RFvi82pwUkxEfGFOrO9M8bR2_PKH5ZOJ3StgTWRPiwJ3jAJHkKbuHDv1rWFbgBwlyvx4gQmhHpY_VZANeBOw2y7Jop2kX38TT_ZbXgNZa9N6_NVQvrcMnIH8qQOv7OqoBI4GGY-SfAoBTjWgXuNbG66yNAXuhvOCNQbP7YhV5ArtbEBwLFgwBtY"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-surface-container-highest text-on-surface text-[10px] font-bold w-6 h-6 rounded-full flex items-center justify-center">2</div>
+</div>
+<div class="bg-surface-container-low rounded-t-2xl w-full pt-6 pb-4 flex flex-col items-center shadow-sm h-32">
+<span class="text-xs font-bold truncate px-2">Julian</span>
+<span class="text-primary font-bold text-sm">2,840</span>
+</div>
+</div>
+<!-- 1st Place -->
+<div class="flex flex-col items-center gap-3">
+<div class="relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 text-tertiary-fixed">
+<span class="material-symbols-outlined" data-icon="workspace_premium" style="font-variation-settings: 'FILL' 1;">workspace_premium</span>
+</div>
+<div class="w-20 h-20 rounded-full border-4 border-primary-container overflow-hidden shadow-lg">
+<img class="w-full h-full object-cover" data-alt="happy woman with long dark wavy hair smiling towards the camera with warm afternoon sunlight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjbY9HzGT_2F7pzh7VRV7z007XCevzNmfisbxZwo8769V9a0T1h4d6egZtMTe0Mf_QlPydm1v3F6xbSKk3Pvm7c7aIqP9wKgoLNx92UjvH5x45qWHrnARFE9EeMf7_amFi5FprZX5RvYtjiZImKER8U_Vwv5vKfTnpRQizR6940-8aVZse3EQHcb5lRqsB7hQ73B7yIRY-gwC3wUXC4BlLuOznCAu7M56L_veQgUIS_die2C--2ZDQPnwCWimFDxbIN8Gc1z_w030"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-primary-container text-on-primary-container text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center">1</div>
+</div>
+<div class="bg-surface-container-lowest rounded-t-3xl w-full pt-8 pb-6 flex flex-col items-center shadow-md h-44 ring-1 ring-primary/10">
+<span class="text-sm font-extrabold truncate px-2">Elena</span>
+<span class="text-primary font-black text-lg">3,120</span>
+</div>
+</div>
+<!-- 3rd Place -->
+<div class="flex flex-col items-center gap-3">
+<div class="relative">
+<div class="w-16 h-16 rounded-full border-4 border-secondary-container/20 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="middle aged man with a well-groomed beard and thoughtful expression in studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVYWf6XvJpsmOOaTaKrSup1x-2aSKJsjsB7-AylbzUB54aChCdweT_yZ3NosVJWUWELRQ52kuu-qrAn17m-q6r6z8d3u_Fvqww60BI38aAbYQST7mlZ0aeOFiNwZj3vjpOG3olaFQZ5yB24petCOC_NeO7FxzdlkLv-St5Zrd09yvRMtxi9k83CvZntpI5xIRIKbNYZowvBKP2Fv8I7h2yeHMzPCCst-asb_N6tr6AMKXtuaqDpVkChEIbSo98MaKmzHbnZClsG5o"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-secondary-container text-on-secondary-container text-[10px] font-bold w-6 h-6 rounded-full flex items-center justify-center">3</div>
+</div>
+<div class="bg-surface-container-low rounded-t-2xl w-full pt-6 pb-4 flex flex-col items-center shadow-sm h-24">
+<span class="text-xs font-bold truncate px-2">Marcus</span>
+<span class="text-primary font-bold text-sm">2,610</span>
+</div>
+</div>
+</section>
+<!-- Ranked List (Bento-inspired list) -->
+<section class="space-y-3">
+<h2 class="text-sm font-bold text-on-surface-variant px-2 uppercase tracking-widest">Global Rankings</h2>
+<!-- List Items -->
+<div class="space-y-4">
+<!-- Rank 4 -->
+<div class="bg-surface-container-lowest rounded-2xl p-4 flex items-center gap-4 group hover:bg-surface-container transition-colors">
+<div class="text-on-surface-variant font-bold text-sm w-4">4</div>
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="portrait of a young adult with glasses and a friendly smile against a neutral indoor background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnHUyrOmBjBkQm8USXZMobRurW7StswVszfr0pGDprvoq00f2Qken47hymYSHlCUu1uJ_1mk9LKw3t0MVgk8v-FURlMH_IEyoNaLF-xvcPUybqekIP2BHTcBz4e7avCQAFboRrqw2LksMbVApaSiLI5JXhe3AW_oFtrtuliPrpcXD_2k3akP7yP4u6dr1nPMsqySJav2JyoT_Q-CuQYID3Qo45-2JI7_yMo0ELfWM8C3ncfMwTtm48_6Hngg45ZJOsBKljGIDssfg"/>
+</div>
+<div class="flex-1">
+<h3 class="font-semibold text-on-surface">Alex Rivera</h3>
+<div class="flex items-center gap-3 mt-1">
+<div class="flex items-center gap-1 text-primary text-xs font-medium bg-primary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="emoji_events">emoji_events</span>
+                                2,450 pts
+                            </div>
+<div class="flex items-center gap-1 text-secondary text-xs font-medium bg-secondary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+                                0 overdue
+                            </div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</div>
+<!-- Rank 5 -->
+<div class="bg-surface-container-lowest rounded-2xl p-4 flex items-center gap-4 group hover:bg-surface-container transition-colors">
+<div class="text-on-surface-variant font-bold text-sm w-4">5</div>
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="close up portrait of a young woman with freckles and intense eyes looking directly at camera" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDk9FjCQaoy7Mpdr1nYXC-Vrc3LhVOoVAiL6K9Hk9KsU4ElIhjuinqgckc0pQgYU1y56loejPhHplV5Y7u8O6tbdJvntmdgCy95QqKhNZEUajlzEFAecuslZm3JrtYNs5iRuM8PGQZdOUvQIpjFHzMVbDXO_Kx8RBIqewcVrFF1NyAmpyJ9unWnmp_57jEZ1N7vscmgt01PU60U-rR4N_DB6CUZaR9jJFYHHuxHhvpAzNRGZfl5-us0y7zX76Qw3Fq2Et6kB-sBuNc"/>
+</div>
+<div class="flex-1">
+<h3 class="font-semibold text-on-surface">Sophie Chen</h3>
+<div class="flex items-center gap-3 mt-1">
+<div class="flex items-center gap-1 text-primary text-xs font-medium bg-primary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="emoji_events">emoji_events</span>
+                                2,310 pts
+                            </div>
+<div class="flex items-center gap-1 text-error text-xs font-medium bg-error/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="warning">warning</span>
+                                2 overdue
+                            </div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</div>
+<!-- Rank 6 -->
+<div class="bg-surface-container-lowest rounded-2xl p-4 flex items-center gap-4 group hover:bg-surface-container transition-colors">
+<div class="text-on-surface-variant font-bold text-sm w-4">6</div>
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="young man with curly hair laughing heartily in an urban setting with high key lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBm0XgpWb5rcml9XTsK5JgglH5dWD2o1pOynBrRK07UiIgdzLSXE-GwPauIo5kw_EojXVoHpvq2PLyr0pekEPNi5RMXye5vb_ufYOOgQ1_mGhCHDaAtb7vCDA4l1Wt2J3FwdjOI9JEk-nMDTmlV47NVrMyT8ZVnztq7og2HQiFBw8ixWpptTYDSutPQIgxwD7J7Rc-KxAOhnVdOv9scUXft3mAQe6PR00tN-sPj0HkHKqcyxpTpjwVVQ74AEBgPt6sUZFEeuewA_Ds"/>
+</div>
+<div class="flex-1">
+<h3 class="font-semibold text-on-surface">Jordan Smith</h3>
+<div class="flex items-center gap-3 mt-1">
+<div class="flex items-center gap-1 text-primary text-xs font-medium bg-primary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="emoji_events">emoji_events</span>
+                                2,180 pts
+                            </div>
+<div class="flex items-center gap-1 text-secondary text-xs font-medium bg-secondary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+                                1 overdue
+                            </div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</div>
+<!-- Rank 7 -->
+<div class="bg-surface-container-lowest rounded-2xl p-4 flex items-center gap-4 group hover:bg-surface-container transition-colors">
+<div class="text-on-surface-variant font-bold text-sm w-4">7</div>
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="elegant portrait of a young woman with braided hair wearing a clean minimalist outfit" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7QSIbdIpkKYCFEGdxjsZUoc-KcBtf7IcoFtWTpZ_5vSFZKfSYKCzsII32INgOU2jjvCANu6QLvOKDCAGg-IiWT0_b3-DmUtOcg_CXlGmjjEiloNaTRziXWWAWQkBewd587AJwRBEee1b0loP19leRUNzn7sfNFJgR9IH7_Gpgw0evXdhvGes9K-GG4GtTTNG83F_sTRGMyrr8nTWprfcneJaoPHfR428Ha4Pdpo7M08OFCKi5fiSlW2QSFyUTy42t589IbnPW00I"/>
+</div>
+<div class="flex-1">
+<h3 class="font-semibold text-on-surface">Layla Wright</h3>
+<div class="flex items-center gap-3 mt-1">
+<div class="flex items-center gap-1 text-primary text-xs font-medium bg-primary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="emoji_events">emoji_events</span>
+                                1,950 pts
+                            </div>
+<div class="flex items-center gap-1 text-secondary text-xs font-medium bg-secondary/5 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+                                0 overdue
+                            </div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl z-50 rounded-t-3xl shadow-[0_-10px_40px_-12px_rgba(25,28,30,0.06)]">
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-5 py-1 hover:text-teal-500 transition-colors active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-['Inter'] text-[11px] font-medium tracking-wide">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-5 py-1 hover:text-teal-500 transition-colors active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="checklist">checklist</span>
+<span class="font-['Inter'] text-[11px] font-medium tracking-wide">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-2xl px-5 py-1 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="leaderboard" style="font-variation-settings: 'FILL' 1;">leaderboard</span>
+<span class="font-['Inter'] text-[11px] font-medium tracking-wide">Stats</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-5 py-1 hover:text-teal-500 transition-colors active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-['Inter'] text-[11px] font-medium tracking-wide">Profile</span>
+</a>
+</nav>
+</body></html>

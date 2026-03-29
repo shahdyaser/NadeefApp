@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Nadeef
 
-## Getting Started
+Nadeef is a home cleaning support tool built with Next.js, prepared for:
 
-First, run the development server:
+- Supabase as the backend database/auth service
+- Vercel deployment
+- Stitch dashboard UI structure from your `stitch_dashboard_nadeef` assets
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Project Structure
+
+- `src/app/page.tsx` - home launcher for all UI screens
+- `src/app/design/[slug]/page.tsx` - dynamic route that renders each stitched design
+- `src/lib/design-screens.ts` - central screen registry
+- `src/lib/supabase/client.ts` - browser Supabase client
+- `src/lib/supabase/server.ts` - server Supabase client
+- `public/designs/*/code.html` - copied stitch dashboard screens
+
+## Local Setup
+
+1. Install dependencies:
+   `npm install`
+
+2. Configure environment variables:
+   - Copy `.env.example` to `.env.local`
+   - Set your Supabase project values:
+     - `NEXT_PUBLIC_SUPABASE_URL`
+     - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - In Supabase Auth -> URL Configuration, add these redirect URLs:
+    - `http://localhost:3000/oauth/consent`
+    - `https://<your-vercel-domain>/oauth/consent`
+  - For MVP, email/password auth is enough (no social providers required).
+
+3. Run development server:
+   `npm run dev`
+
+4. Open:
+   [http://localhost:3000](http://localhost:3000)
+
+## Deploy to Vercel
+
+1. Import this project in Vercel.
+2. In Project Settings -> Environment Variables, add:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Deploy.
+
+Vercel automatically detects Next.js settings; no additional build config is required.
+
+## Supabase Database Setup
+
+1. Open your Supabase project.
+2. Go to `SQL Editor`.
+3. Open `supabase/schema.sql` from this project and run it.
+4. This creates:
+   - `house`
+   - `user_house_bridge`
+   - `room`
+   - `task`
+   - `task_history`
+   - enums, indexes, triggers, and RLS policies
+
+### MVP Constraint (one home per user)
+
+For MVP, we enforce one home per user with:
+
+- `user_house_bridge_one_home_per_user_idx`
+
+When you are ready for multi-home per user, run:
+
+```sql
+drop index if exists public.user_house_bridge_one_home_per_user_idx;
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Current UI Routes
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `/` (real login/sign-up page with Supabase auth)
+- `/setup` (first-time only: create house)
+- `/home` (house dashboard with room cards and Add Room card)
+- `/oauth/consent` (OAuth callback processor)
+- `/auth/callback` (legacy callback alias)
+- `/design/login`
+- `/design/dashboard`
+- `/design/tasks`
+- `/design/task-new`
+- `/design/room-new`
+- `/design/kitchen`
+- `/design/leaderboard`
+- `/design/profile`
+- `/design/theme-preview`

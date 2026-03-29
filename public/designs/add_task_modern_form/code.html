@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-dim": "#d8dadc",
+              "on-error-container": "#93000a",
+              "tertiary-container": "#d8bd23",
+              "on-primary": "#ffffff",
+              "on-tertiary-container": "#594c00",
+              "on-secondary-container": "#5c2400",
+              "secondary-container": "#fd761a",
+              "error-container": "#ffdad6",
+              "error": "#ba1a1a",
+              "surface-variant": "#e0e3e5",
+              "on-error": "#ffffff",
+              "primary-fixed": "#62fae3",
+              "secondary": "#9d4300",
+              "on-secondary-fixed": "#341100",
+              "background": "#f7f9fb",
+              "outline-variant": "#bacac5",
+              "on-background": "#191c1e",
+              "secondary-fixed-dim": "#ffb690",
+              "primary-container": "#2dd4bf",
+              "on-surface": "#191c1e",
+              "on-surface-variant": "#3c4a46",
+              "on-secondary": "#ffffff",
+              "on-secondary-fixed-variant": "#783200",
+              "inverse-surface": "#2d3133",
+              "on-tertiary-fixed-variant": "#524600",
+              "on-tertiary-fixed": "#211b00",
+              "surface-container": "#eceef0",
+              "tertiary": "#6d5e00",
+              "on-tertiary": "#ffffff",
+              "primary": "#006b5f",
+              "surface-bright": "#f7f9fb",
+              "inverse-on-surface": "#eff1f3",
+              "tertiary-fixed-dim": "#e2c62d",
+              "outline": "#6b7a76",
+              "on-primary-container": "#00574d",
+              "surface-tint": "#006b5f",
+              "primary-fixed-dim": "#3cddc7",
+              "surface-container-highest": "#e0e3e5",
+              "tertiary-fixed": "#ffe24c",
+              "inverse-primary": "#3cddc7",
+              "on-primary-fixed": "#00201c",
+              "on-primary-fixed-variant": "#005047",
+              "surface-container-low": "#f2f4f6",
+              "surface-container-lowest": "#ffffff",
+              "surface-container-high": "#e6e8ea",
+              "surface": "#f7f9fb",
+              "secondary-fixed": "#ffdbca"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "1.5rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body text-on-surface min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] flex items-center justify-between px-6 py-4">
+<div class="flex items-center gap-4">
+<button class="text-slate-500 hover:bg-slate-100/50 transition-colors p-2 rounded-full active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+<h1 class="text-xl font-bold tracking-tight text-slate-900 font-headline">New Sanctuary Task</h1>
+</div>
+<div class="w-10"></div> <!-- Spacer for symmetry -->
+</header>
+<!-- Main Content Canvas (Background behind modal) -->
+<main class="pt-24 px-6 pb-32">
+<div class="max-w-md mx-auto space-y-8 opacity-40 grayscale pointer-events-none">
+<div class="bg-surface-container-lowest rounded-xl p-6 h-32 w-full"></div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest rounded-xl p-6 h-40"></div>
+<div class="bg-surface-container-lowest rounded-xl p-6 h-40"></div>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-6 h-64 w-full"></div>
+</div>
+</main>
+<!-- Bottom Sheet Backdrop -->
+<div class="fixed inset-0 bg-on-background/10 backdrop-blur-sm z-[60]"></div>
+<!-- Add Task Modal (Bottom-Sheet Style) -->
+<section class="fixed bottom-0 left-0 right-0 z-[70] bg-surface-container-lowest rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.08)] max-w-2xl mx-auto overflow-hidden">
+<!-- Handlebar -->
+<div class="flex justify-center pt-4 pb-2">
+<div class="w-12 h-1.5 bg-surface-variant rounded-full"></div>
+</div>
+<div class="px-8 pb-10 pt-4 space-y-10 max-h-[751px] overflow-y-auto hide-scrollbar">
+<!-- Task Name Field -->
+<div class="space-y-3">
+<label class="block text-sm font-semibold tracking-wide text-on-surface-variant uppercase ml-1">Task Identity</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl px-6 py-5 text-lg font-medium placeholder:text-outline focus:ring-2 focus:ring-primary-container transition-all" placeholder="Deep Clean Living Room..." type="text"/>
+</div>
+<!-- Select Room (Horizontal Icon Scroll) -->
+<div class="space-y-4">
+<div class="flex justify-between items-end px-1">
+<label class="block text-sm font-semibold tracking-wide text-on-surface-variant uppercase">Select Sanctuary</label>
+<span class="text-xs font-medium text-primary">View All</span>
+</div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar -mx-2 px-2 py-2">
+<!-- Room Item: Kitchen (Active) -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3">
+<div class="w-20 h-20 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container shadow-lg shadow-primary/10 active:scale-95 transition-transform cursor-pointer">
+<span class="material-symbols-outlined text-3xl" data-icon="cooking">cooking</span>
+</div>
+<span class="text-xs font-bold text-primary">Kitchen</span>
+</div>
+<!-- Room Item: Bedroom -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3">
+<div class="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center text-outline hover:bg-surface-container transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-3xl" data-icon="bed">bed</span>
+</div>
+<span class="text-xs font-medium text-on-surface-variant">Bedroom</span>
+</div>
+<!-- Room Item: Bathroom -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3">
+<div class="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center text-outline hover:bg-surface-container transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-3xl" data-icon="bathtub">bathtub</span>
+</div>
+<span class="text-xs font-medium text-on-surface-variant">Bathroom</span>
+</div>
+<!-- Room Item: Garden -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3">
+<div class="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center text-outline hover:bg-surface-container transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-3xl" data-icon="park">park</span>
+</div>
+<span class="text-xs font-medium text-on-surface-variant">Garden</span>
+</div>
+<!-- Room Item: Office -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3">
+<div class="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center text-outline hover:bg-surface-container transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-3xl" data-icon="desk">desk</span>
+</div>
+<span class="text-xs font-medium text-on-surface-variant">Office</span>
+</div>
+</div>
+</div>
+<!-- Frequency and Effort Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+<!-- Frequency -->
+<div class="space-y-4">
+<label class="block text-sm font-semibold tracking-wide text-on-surface-variant uppercase ml-1">Frequency</label>
+<div class="flex items-center gap-3 p-1 bg-surface-container-low rounded-xl">
+<div class="flex-1 px-4 py-3 bg-surface-container-lowest rounded-lg shadow-sm">
+<span class="text-xs text-outline block mb-1">Every</span>
+<input class="w-full bg-transparent border-none p-0 text-xl font-bold text-on-surface focus:ring-0" type="number" value="3"/>
+</div>
+<div class="flex-1 px-4 py-3">
+<select class="w-full bg-transparent border-none p-0 text-sm font-bold text-primary uppercase tracking-widest focus:ring-0 appearance-none">
+<option>Days</option>
+<option selected="">Weeks</option>
+<option>Months</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Effort Level -->
+<div class="space-y-4">
+<label class="block text-sm font-semibold tracking-wide text-on-surface-variant uppercase ml-1">Effort Level</label>
+<div class="flex items-center justify-around h-[72px] bg-surface-container-low rounded-xl px-4">
+<button class="text-secondary-container active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-3xl" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+</button>
+<button class="text-secondary-container active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-3xl" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+</button>
+<button class="text-surface-dim active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-3xl" data-icon="star">star</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Primary Action -->
+<div class="pt-4">
+<button class="w-full py-5 rounded-full bg-gradient-to-r from-primary to-primary-container text-white text-lg font-bold shadow-xl shadow-primary/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3">
+<span class="material-symbols-outlined" data-icon="add_task">add_task</span>
+                    Create Task
+                </button>
+<p class="text-center mt-6 text-sm text-outline font-medium">
+                    This task will be added to your <span class="text-on-surface">Weekly Flow</span>
+</p>
+</div>
+</div>
+</section>
+<!-- BottomNavBar (Suppressed due to task focus, but template provided for reference) -->
+<nav class="hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-t-[1.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-50">
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-4 py-2">
+<span class="material-symbols-outlined" data-icon="home_max">home_max</span>
+<span class="text-[10px] font-medium uppercase tracking-wider">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-2xl px-4 py-2">
+<span class="material-symbols-outlined" data-icon="Assignment">assignment</span>
+<span class="text-[10px] font-medium uppercase tracking-wider">Tasks</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-4 py-2">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span class="text-[10px] font-medium uppercase tracking-wider">Schedule</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-4 py-2">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="text-[10px] font-medium uppercase tracking-wider">Profile</span>
+</div>
+</nav>
+</body></html>
