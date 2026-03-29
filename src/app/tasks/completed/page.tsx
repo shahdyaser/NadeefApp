@@ -140,6 +140,7 @@ export default function CompletedTasksPage() {
         "user_id",
         (houseMembers ?? []).map((member) => member.user_id),
       )
+      .gt("points_awarded", 0)
       .order("completed_at", { ascending: false });
     if (historyError) {
       setError(historyError.message);
