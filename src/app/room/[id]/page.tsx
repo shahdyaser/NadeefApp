@@ -199,6 +199,7 @@ export default function RoomDetailPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [houseName, setHouseName] = useState<string>("Home");
+  const [houseOwnerId, setHouseOwnerId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [roomsInHouse, setRoomsInHouse] = useState<RoomRow[]>([]);
   const [membersInHouse, setMembersInHouse] = useState<MemberOption[]>([]);
@@ -276,7 +277,7 @@ export default function RoomDetailPage() {
 
     const { data: houseData, error: houseError } = await supabaseClient
       .from("house")
-      .select("name")
+      .select("name,owner_id")
       .eq("id", roomData.house_id)
       .single();
 
@@ -324,6 +325,7 @@ export default function RoomDetailPage() {
 
     setRoom(roomData);
     setHouseName(houseData.name);
+    setHouseOwnerId(houseData.owner_id ?? null);
     const sortedTasks = [...(taskData ?? [])].sort((a, b) => {
       if (!a.next_due_date && !b.next_due_date) return 0;
       if (!a.next_due_date) return 1;
@@ -428,7 +430,7 @@ export default function RoomDetailPage() {
       const { error: insertError } = await supabaseClient.from("task").insert({
         room_id: selectedRoomId,
         house_id: room.house_id,
-        assigned_to: selectedAssigneeIds[0] ?? userId,
+        assigned_to: selectedAssigneeIds[0] ?? houseOwnerId ?? userId,
         assigned_user_ids: selectedAssigneeIds,
         assignment_mode: assignmentMode,
         name: taskName.trim(),
@@ -453,7 +455,7 @@ export default function RoomDetailPage() {
     setStartingDueDate(new Date().toISOString().slice(0, 10));
     setFrequencyValue(3);
     setFrequencyUnit("days");
-    setSelectedAssigneeIds([userId]);
+    setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : [userId]);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
     setEffortStars(2);
@@ -530,7 +532,7 @@ export default function RoomDetailPage() {
     setStartingDueDate(new Date().toISOString().slice(0, 10));
     setFrequencyValue(3);
     setFrequencyUnit("days");
-    setSelectedAssigneeIds(userId ? [userId] : []);
+    setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : userId ? [userId] : []);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
     setEffortStars(2);

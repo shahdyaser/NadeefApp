@@ -543,10 +543,6 @@ After signing up, enter this house code to join: ${inviteCode}`;
                 Share via More Apps
               </button>
             </div>
-            <p className="text-xs text-slate-500">
-              Change the signup link anytime from <code>NEXT_PUBLIC_APP_SIGNUP_URL</code> in your
-              environment configuration.
-            </p>
 
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">

@@ -592,13 +592,7 @@ create policy bridge_select_policy
 on public.user_house_bridge
 for select
 using (
-  user_id = auth.uid()
-  or exists (
-    select 1
-    from public.house h
-    where h.id = house_id
-      and h.owner_id = auth.uid()
-  )
+  public.is_house_member(house_id)
 );
 
 drop policy if exists bridge_insert_policy on public.user_house_bridge;
