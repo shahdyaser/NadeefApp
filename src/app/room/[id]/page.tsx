@@ -780,19 +780,23 @@ export default function RoomDetailPage() {
     return completedDate >= periodStart && completedDate <= periodEnd;
   });
   const duePeriodTasks = tasks.filter(
-    (task) => !!task.next_due_date && task.next_due_date >= periodStart && task.next_due_date <= periodEnd,
+    (task) =>
+      task.status === "active" &&
+      !!task.next_due_date &&
+      task.next_due_date >= periodStart &&
+      task.next_due_date <= periodEnd,
   );
   const overduePeriodTasks = tasks.filter(
-    (task) => !!task.next_due_date && task.next_due_date < todayDateOnly,
+    (task) => task.status === "active" && !!task.next_due_date && task.next_due_date < todayDateOnly,
   );
-  const scopedActiveTasks = tasks.filter(
-    (task) => !!task.next_due_date && task.next_due_date <= periodEnd,
+  const activeTasks = tasks.filter(
+    (task) => task.status === "active",
   );
 
   const dueTodayCount = duePeriodTasks.length;
   const doneTodayCount = donePeriodTasks.length;
   const overdueCount = overduePeriodTasks.length;
-  const activeTaskCount = scopedActiveTasks.length;
+  const activeTaskCount = activeTasks.length;
   const pendingToday = dueTodayCount + overdueCount;
   const cleanliness =
     activeTaskCount === 0
@@ -808,6 +812,7 @@ export default function RoomDetailPage() {
     ...duePeriodTasks.map((task) => task.id),
     ...overduePeriodTasks.map((task) => task.id),
   ]);
+  const doneTaskIds = new Set(donePeriodTasks.map((task) => task.id));
   const periodTasks = tasks.filter((task) => allPeriodTaskIds.has(task.id));
   const filteredTasks = periodTasks.filter((task) => {
     if (taskListFilter === "done_today") {
@@ -1063,6 +1068,7 @@ export default function RoomDetailPage() {
           {filteredTasks.map((task) => {
             const dueMeta = getDueMeta(task.next_due_date);
             const effortStars = Math.max(1, Math.min(3, Math.round(task.effort_points / 10)));
+            const isDoneTask = doneTaskIds.has(task.id);
             const primaryAssigneeId =
               task.assigned_user_ids?.[0] || task.assigned_to || null;
             const assigneeProfile = primaryAssigneeId
@@ -1172,23 +1178,29 @@ export default function RoomDetailPage() {
                         />
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleNadeefTask(task)}
-                      disabled={completingTaskId === task.id}
-                      className={`flex items-center gap-2 rounded-full px-4 py-2 text-white shadow-lg transition-all active:scale-95 ${
-                        completingTaskId === task.id
-                          ? "bg-teal-600/80"
-                          : "bg-gradient-to-br from-teal-700 to-teal-400"
-                      }`}
-                    >
-                      <span className={`text-sm ${completingTaskId === task.id ? "animate-spin" : ""}`}>
-                        {completingTaskId === task.id ? "◌" : "✓"}
+                    {isDoneTask ? (
+                      <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                        Done
                       </span>
-                      <span className="text-xs font-bold uppercase tracking-wide">
-                        {completingTaskId === task.id ? "Nadeefing..." : "Nadeef"}
-                      </span>
-                    </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleNadeefTask(task)}
+                        disabled={completingTaskId === task.id}
+                        className={`flex items-center gap-2 rounded-full px-4 py-2 text-white shadow-lg transition-all active:scale-95 ${
+                          completingTaskId === task.id
+                            ? "bg-teal-600/80"
+                            : "bg-gradient-to-br from-teal-700 to-teal-400"
+                        }`}
+                      >
+                        <span className={`text-sm ${completingTaskId === task.id ? "animate-spin" : ""}`}>
+                          {completingTaskId === task.id ? "◌" : "✓"}
+                        </span>
+                        <span className="text-xs font-bold uppercase tracking-wide">
+                          {completingTaskId === task.id ? "Nadeefing..." : "Nadeef"}
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </article>
               </div>

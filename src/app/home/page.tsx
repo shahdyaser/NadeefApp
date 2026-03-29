@@ -538,11 +538,12 @@ export default function HomePage() {
 
         <section className="grid grid-cols-2 gap-4">
           {rooms.map((room) => {
-            const roomTasks = scopedActiveTasks.filter((task) => task.room_id === room.id);
-            const roomOverdue = roomTasks.filter(
+            const roomActiveTasks = activeTasks.filter((task) => task.room_id === room.id);
+            const roomDueNowTasks = scopedActiveTasks.filter((task) => task.room_id === room.id);
+            const roomOverdue = roomDueNowTasks.filter(
               (task) => !!task.next_due_date && task.next_due_date < today,
             ).length;
-            const roomFreshness = getFreshnessFromTasks(roomTasks, today);
+            const roomFreshness = getFreshnessFromTasks(roomActiveTasks, today);
             const tone = getRoomFreshnessTone(roomFreshness);
 
             return (
@@ -562,7 +563,7 @@ export default function HomePage() {
                 <div>
                   <p className="text-sm font-bold">{room.name}</p>
                   <p className="text-xs text-slate-500">
-                    {roomTasks.length} due now - {toRoomLabel(room.type)}
+                    {roomDueNowTasks.length} due now - {toRoomLabel(room.type)}
                   </p>
                   <p className={`text-[11px] font-semibold ${roomOverdue > 0 ? "text-red-600" : "text-slate-400"}`}>
                     {roomOverdue > 0 ? `${roomOverdue} overdue` : "No overdue"}
