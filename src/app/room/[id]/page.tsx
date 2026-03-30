@@ -150,6 +150,12 @@ function formatDateKey(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
+function frequencyToDays(value: number, unit: "days" | "weeks" | "months") {
+  if (unit === "weeks") return value * 7;
+  if (unit === "months") return value * 30;
+  return value;
+}
+
 function getFreshnessTone(freshness: number) {
   if (freshness >= 80) {
     return {
@@ -234,6 +240,24 @@ export default function RoomDetailPage() {
   const [taskListFilter, setTaskListFilter] = useState<TaskListFilter>("all");
   const [periodWindow, setPeriodWindow] = useState<PeriodWindow>("today");
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+
+  function getSuggestedDueDate(nextFrequencyValue: number, nextFrequencyUnit: "days" | "weeks" | "months") {
+    const nextDue = new Date();
+    nextDue.setHours(0, 0, 0, 0);
+    nextDue.setDate(nextDue.getDate() + frequencyToDays(nextFrequencyValue, nextFrequencyUnit));
+    return formatDateKey(nextDue);
+  }
+
+  function setFrequencyAndDue(
+    nextFrequencyValue: number,
+    nextFrequencyUnit: "days" | "weeks" | "months",
+  ) {
+    setFrequencyValue(nextFrequencyValue);
+    setFrequencyUnit(nextFrequencyUnit);
+    if (!editingTask) {
+      setStartingDueDate(getSuggestedDueDate(nextFrequencyValue, nextFrequencyUnit));
+    }
+  }
 
   async function loadRoomData() {
     if (!supabaseClient) {
@@ -409,11 +433,7 @@ export default function RoomDetailPage() {
 
     const frequencyDays = selectedLibraryTask
       ? selectedLibraryTask.default_frequency_days
-      : frequencyUnit === "days"
-        ? frequencyValue
-        : frequencyUnit === "weeks"
-          ? frequencyValue * 7
-          : frequencyValue * 30;
+      : frequencyToDays(frequencyValue, frequencyUnit);
     const effectiveEffortStars = selectedLibraryTask
       ? (Math.max(1, Math.min(3, selectedLibraryTask.default_effort)) as 1 | 2 | 3)
       : effortStars;
@@ -454,6 +474,9 @@ export default function RoomDetailPage() {
 
       setMessage("Task updated.");
     } else {
+      const [startYear, startMonth, startDay] = startingDueDate.split("-").map(Number);
+      const firstDueDate = new Date(startYear, startMonth - 1, startDay);
+      firstDueDate.setDate(firstDueDate.getDate() + frequencyDays);
       const { error: insertError } = await supabaseClient.from("task").insert({
         room_id: selectedRoomId,
         house_id: room.house_id,
@@ -464,7 +487,7 @@ export default function RoomDetailPage() {
         frequency_days: frequencyDays,
         effort_points: EFFORT_TO_POINTS[effectiveEffortStars],
         last_completed_at: null,
-        next_due_date: startingDueDate,
+        next_due_date: formatDateKey(firstDueDate),
         status: "active",
       });
       setSaving(false);
@@ -479,9 +502,9 @@ export default function RoomDetailPage() {
 
     setTaskName("");
     setSelectedRoomId(room.id);
-    setStartingDueDate(new Date().toISOString().slice(0, 10));
     setFrequencyValue(3);
     setFrequencyUnit("days");
+    setStartingDueDate(getSuggestedDueDate(3, "days"));
     setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : [userId]);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
@@ -595,6 +618,36 @@ export default function RoomDetailPage() {
     await loadRoomData();
   }
 
+  async function handleDeleteRoom() {
+    if (!supabaseClient || !room) return;
+    if (!canManageTasks) {
+      setError("Helpers can only view and mark tasks as done.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${room.name}"? This will remove the room and all its tasks.`,
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    const { error: deleteError } = await supabaseClient
+      .from("room")
+      .delete()
+      .eq("id", room.id);
+
+    setSaving(false);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    router.replace("/home");
+  }
+
   async function handleNadeefTask(task: TaskRow) {
     if (!supabaseClient || !userId || completingTaskId) return;
     setError(null);
@@ -630,9 +683,9 @@ export default function RoomDetailPage() {
     setEditingTask(null);
     setTaskName("");
     setSelectedRoomId(room?.id ?? "");
-    setStartingDueDate(new Date().toISOString().slice(0, 10));
     setFrequencyValue(3);
     setFrequencyUnit("days");
+    setStartingDueDate(getSuggestedDueDate(3, "days"));
     setSelectedAssigneeIds(houseOwnerId ? [houseOwnerId] : userId ? [userId] : []);
     setAssignmentMode("together");
     setShowAssigneeMenu(false);
@@ -697,8 +750,7 @@ export default function RoomDetailPage() {
     setTaskName(entry.name);
     setTaskLibrarySearch(entry.name);
     setSelectedLibraryTaskId(entry.id);
-    setFrequencyUnit("days");
-    setFrequencyValue(Math.max(1, entry.default_frequency_days));
+    setFrequencyAndDue(Math.max(1, entry.default_frequency_days), "days");
     setEffortStars(
       Math.max(1, Math.min(3, entry.default_effort)) as 1 | 2 | 3,
     );
@@ -1130,7 +1182,11 @@ export default function RoomDetailPage() {
                 >
                   <div className="mb-3 flex items-start justify-between">
                     <div>
-                      <h4 className="font-bold text-slate-900">{task.name}</h4>
+                      <h4 className="font-bold text-slate-900">
+                        <Link href={`/tasks/${task.id}`} className="hover:text-teal-700">
+                          {task.name}
+                        </Link>
+                      </h4>
                       <div className="mt-1 flex items-center gap-2">
                         <div className="flex">
                           {[1, 2, 3].map((star) => (
@@ -1353,22 +1409,6 @@ export default function RoomDetailPage() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Starting Due Date
-                </label>
-                <input
-                  aria-label="Starting due date"
-                  type="date"
-                  value={startingDueDate}
-                  onChange={(event) => setStartingDueDate(event.target.value)}
-                  className="w-full rounded-xl border-none bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 outline-none ring-2 ring-transparent transition-all focus:ring-teal-300"
-                />
-                <p className="text-xs text-slate-500">
-                  Default is today. Change it if this task should start later.
-                </p>
-              </div>
-
               <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
                 <div className="space-y-4">
                   <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -1378,7 +1418,9 @@ export default function RoomDetailPage() {
                     <div className="flex flex-1 items-center gap-2 rounded-lg bg-white px-3 py-3 shadow-sm">
                       <button
                         type="button"
-                        onClick={() => setFrequencyValue((prev) => Math.max(1, prev - 1))}
+                        onClick={() =>
+                          setFrequencyAndDue(Math.max(1, frequencyValue - 1), frequencyUnit)
+                        }
                         className="h-8 w-8 rounded-full bg-slate-200 text-lg font-bold text-slate-700"
                         aria-label="Decrease frequency"
                       >
@@ -1390,14 +1432,17 @@ export default function RoomDetailPage() {
                         type="number"
                         min={1}
                         value={frequencyValue}
-                        onChange={(event) =>
-                          setFrequencyValue(Math.max(1, Number(event.target.value)))
-                        }
+                        onChange={(event) => {
+                          const nextFrequencyValue = Math.max(1, Number(event.target.value) || 1);
+                          setFrequencyAndDue(nextFrequencyValue, frequencyUnit);
+                        }}
                         className="w-14 bg-transparent p-0 text-center text-xl font-bold text-slate-900 outline-none"
                       />
                       <button
                         type="button"
-                        onClick={() => setFrequencyValue((prev) => prev + 1)}
+                        onClick={() =>
+                          setFrequencyAndDue(frequencyValue + 1, frequencyUnit)
+                        }
                         className="h-8 w-8 rounded-full bg-slate-200 text-lg font-bold text-slate-700"
                         aria-label="Increase frequency"
                       >
@@ -1411,9 +1456,13 @@ export default function RoomDetailPage() {
                       <select
                         aria-label="Frequency unit"
                         value={frequencyUnit}
-                        onChange={(event) =>
-                          setFrequencyUnit(event.target.value as "days" | "weeks" | "months")
-                        }
+                        onChange={(event) => {
+                          const nextFrequencyUnit = event.target.value as
+                            | "days"
+                            | "weeks"
+                            | "months";
+                          setFrequencyAndDue(frequencyValue, nextFrequencyUnit);
+                        }}
                         className="w-full appearance-none bg-transparent p-0 text-sm font-bold uppercase tracking-widest text-teal-700 outline-none"
                       >
                         <option value="days">Days</option>
@@ -1446,6 +1495,22 @@ export default function RoomDetailPage() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Starting Due Date
+                </label>
+                <input
+                  aria-label="Starting due date"
+                  type="date"
+                  value={startingDueDate}
+                  onChange={(event) => setStartingDueDate(event.target.value)}
+                  className="w-full rounded-xl border-none bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 outline-none ring-2 ring-transparent transition-all focus:ring-teal-300"
+                />
+                <p className="text-xs text-slate-500">
+                  Suggested from frequency. You can still edit it manually.
+                </p>
               </div>
 
               <div className="space-y-4">
@@ -1598,6 +1663,14 @@ export default function RoomDetailPage() {
               className="w-full rounded-xl bg-teal-700 py-2.5 text-sm font-bold text-white disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save Room"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteRoom()}
+              disabled={saving}
+              className="w-full rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {saving ? "Deleting..." : "Delete Room"}
             </button>
           </form>
         </div>

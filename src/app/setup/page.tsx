@@ -57,6 +57,13 @@ const DEFAULT_ROOM_COUNTS: Record<RoomTemplateKey, number> = ROOM_TEMPLATES.redu
   {} as Record<RoomTemplateKey, number>,
 );
 
+function toDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export default function SetupPage() {
   const router = useRouter();
   const supabaseClient = useMemo(() => {
@@ -243,11 +250,14 @@ export default function SetupPage() {
         libraryByTemplate.set(row.room_template, bucket);
       }
 
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayBase = new Date();
+      todayBase.setHours(0, 0, 0, 0);
       const taskRows: Array<Database["public"]["Tables"]["task"]["Insert"]> = [];
       for (const room of createdRooms) {
         const templates = libraryByTemplate.get(room.templateKey) ?? [];
         for (const tpl of templates) {
+          const firstDue = new Date(todayBase);
+          firstDue.setDate(firstDue.getDate() + tpl.default_frequency_days);
           taskRows.push({
             room_id: room.id,
             house_id: houseId,
@@ -258,7 +268,7 @@ export default function SetupPage() {
             frequency_days: tpl.default_frequency_days,
             effort_points: tpl.default_effort * 10,
             last_completed_at: null,
-            next_due_date: todayIso,
+            next_due_date: toDateKey(firstDue),
             status: "active",
           });
         }

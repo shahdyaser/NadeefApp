@@ -222,125 +222,6 @@ create table if not exists public.task_library (
   unique (room_template, name)
 );
 
-insert into public.task_library (room_template, name, default_frequency_days, default_effort)
-values
-  ('kitchen', 'Sanitize countertops & stovetop', 1, 1),
-  ('kitchen', 'Scrub & disinfect the sink', 1, 2),
-  ('kitchen', 'Wipe exterior of large appliances', 3, 1),
-  ('kitchen', 'Clean microwave interior', 7, 2),
-  ('kitchen', 'Degrease range hood filters', 30, 3),
-  ('kitchen', 'Deep clean oven interior', 30, 3),
-  ('kitchen', 'Clean refrigerator interior & shelves', 30, 3),
-  ('kitchen', 'Sanitize dishwasher filter', 30, 2),
-  ('kitchen', 'Wipe inside cutlery/utensil drawers', 60, 2),
-  ('kitchen', 'Scrub backsplash tiles', 14, 2),
-  ('kitchen', 'Clean window sills & tracks', 30, 2),
-  ('kitchen', 'Dust top of cabinets', 60, 3),
-  ('bathroom', 'Wipe vanity & mirror', 2, 1),
-  ('bathroom', 'Sanitize toilet (bowl & base)', 3, 2),
-  ('bathroom', 'Scrub shower walls & glass door', 7, 3),
-  ('bathroom', 'Deep clean bathtub & hardware', 7, 3),
-  ('bathroom', 'Wash bath mats & rugs', 7, 2),
-  ('bathroom', 'Clear hair from drains', 7, 2),
-  ('bathroom', 'Scrub grout lines', 60, 3),
-  ('bathroom', 'Polish faucets & showerheads', 14, 1),
-  ('bathroom', 'Dust exhaust fan vent', 60, 2),
-  ('bathroom', 'Disinfect light switches & knobs', 7, 1),
-  ('bedroom', 'Make the bed', 1, 1),
-  ('bedroom', 'Change bed linens', 7, 2),
-  ('bedroom', 'Dust nightstands & lampshades', 7, 1),
-  ('bedroom', 'Vacuum under the bed', 14, 2),
-  ('bedroom', 'Rotate mattress', 90, 3),
-  ('bedroom', 'Wash pillows & duvets', 90, 2),
-  ('bedroom', 'Dust baseboards', 30, 3),
-  ('bedroom', 'Clean bedroom windows (interior)', 60, 2),
-  ('bedroom', 'Dust ceiling fan blades', 30, 2),
-  ('kids_room', 'Sanitize plastic toys', 14, 2),
-  ('kids_room', 'Wash stuffed animals/plushies', 30, 1),
-  ('kids_room', 'Organize toy bins & shelves', 2, 2),
-  ('kids_room', 'Disinfect diaper pail/trash bin', 3, 1),
-  ('kids_room', 'Wipe down crib/bed rails', 7, 1),
-  ('kids_room', 'Vacuum/Steam clean play mats', 7, 2),
-  ('kids_room', 'Spot clean wall scuffs/drawings', 30, 2),
-  ('kids_room', 'Dust picture frames & decor', 30, 1),
-  ('kids_room', 'Vacuum bedroom closet floor', 14, 2),
-  ('entrance_hallway', 'Shake out & vacuum doormat', 3, 1),
-  ('entrance_hallway', 'Organize shoes & coat rack', 2, 1),
-  ('entrance_hallway', 'Wipe down front door & handle', 14, 1),
-  ('entrance_hallway', 'Dust hallway console/mirror', 7, 1),
-  ('entrance_hallway', 'Sweep/Mop high-traffic floor', 2, 2),
-  ('entrance_hallway', 'Dust crown molding', 90, 2),
-  ('entrance_hallway', 'Wipe down handrails', 7, 1),
-  ('entrance_hallway', 'Vacuum the stairs', 7, 3),
-  ('office_room', 'Sanitize keyboard & mouse', 7, 1),
-  ('office_room', 'Wipe down desk surface', 2, 1),
-  ('office_room', 'Dust monitor screen & CPU', 7, 1),
-  ('office_room', 'Organize cables & wires', 60, 2),
-  ('office_room', 'Shred/recycle old papers', 14, 1),
-  ('office_room', 'Dust bookshelves', 30, 2),
-  ('office_room', 'Empty office trash bin', 2, 1),
-  ('office_room', 'Clean light fixtures/globes', 90, 2),
-  ('dressing_room', 'Re-fold fallen clothes', 7, 2),
-  ('dressing_room', 'Dust open shelving', 14, 1),
-  ('dressing_room', 'Clean full-length mirrors', 7, 1),
-  ('dressing_room', 'Vacuum closet floor corner-to-corner', 14, 2),
-  ('dressing_room', 'Switch seasonal clothing', 180, 3),
-  ('dressing_room', 'Dust jewelry boxes/trinkets', 30, 1),
-  ('laundry_room', 'Clean dryer lint trap', 1, 1),
-  ('laundry_room', 'Wipe washer/dryer exterior', 7, 1),
-  ('laundry_room', 'Run washer self-clean cycle', 30, 1),
-  ('laundry_room', 'Scrub laundry utility sink', 14, 2),
-  ('laundry_room', 'Vacuum behind machines', 90, 3),
-  ('laundry_room', 'Clean washing machine seal', 30, 2),
-  ('laundry_room', 'Organize detergent/supplies', 30, 1),
-  ('dining_room', 'Polish dining table surface', 2, 1),
-  ('dining_room', 'Dust dining chair rungs/legs', 30, 2),
-  ('dining_room', 'Clean sideboard/buffet interior', 60, 2),
-  ('dining_room', 'Dust chandelier/pendant light', 30, 2),
-  ('dining_room', 'Vacuum rug under table', 3, 2),
-  ('dining_room', 'Wash table linens/placemats', 14, 1),
-  ('basement', 'Sweep concrete/finished floors', 30, 2),
-  ('basement', 'Check for dampness/mold', 30, 1),
-  ('basement', 'Dust exposed pipes/beams', 90, 3),
-  ('basement', 'Cobweb removal in corners', 30, 2),
-  ('basement', 'Wipe down stairs to basement', 14, 2),
-  ('basement', 'Inspect/Clean dehumidifier', 30, 2),
-  ('garage', 'Sweep main floor area', 30, 3),
-  ('garage', 'Wipe down workbench', 30, 2),
-  ('garage', 'Organize tools/storage bins', 90, 3),
-  ('garage', 'Clean garage door sensors/tracks', 180, 2),
-  ('garage', 'Degrease floor stains', 90, 3),
-  ('garage', 'Dust garage shelving', 90, 2),
-  ('storage_room', 'Inventory check', 180, 2),
-  ('storage_room', 'Dust tops of storage boxes', 90, 2),
-  ('storage_room', 'Sweep/Vacuum floor', 60, 2),
-  ('storage_room', 'De-clutter "junk" drawer/bins', 90, 2),
-  ('balcony', 'Sweep balcony floor', 7, 2),
-  ('balcony', 'Wipe down railings', 14, 2),
-  ('balcony', 'Wash exterior glass doors', 30, 3),
-  ('balcony', 'Clean balcony furniture', 30, 2),
-  ('terrace', 'Sweep terrace area', 7, 2),
-  ('terrace', 'Clear drain/gutter debris', 90, 3),
-  ('terrace', 'Deep clean outdoor grill/area', 60, 3),
-  ('terrace', 'Inspect/wipe outdoor lighting', 60, 1),
-  ('terrace', 'Power wash floor surface', 180, 3),
-  ('living_room', 'Tidy coffee table & surfaces', 1, 1),
-  ('living_room', 'Fluff and rotate sofa cushions', 3, 1),
-  ('living_room', 'Vacuum high-traffic floor areas', 2, 2),
-  ('living_room', 'Dust TV, media console & electronics', 7, 1),
-  ('living_room', 'Sanitize remote controls & controllers', 7, 1),
-  ('living_room', 'Vacuum under furniture cushions', 14, 2),
-  ('living_room', 'Dust lampshades & light fixtures', 14, 1),
-  ('living_room', 'Wash throw blankets & pillow covers', 14, 1),
-  ('living_room', 'Polish wood furniture & side tables', 30, 2),
-  ('living_room', 'Dust indoor plant leaves', 30, 1),
-  ('living_room', 'Deep clean/steam upholstery', 90, 3),
-  ('living_room', 'Clean windows & curtain rods', 60, 2)
-on conflict (room_template, name) do update
-set
-  default_frequency_days = excluded.default_frequency_days,
-  default_effort = excluded.default_effort;
-
 -- ===== Triggers =====
 drop trigger if exists set_house_updated_at on public.house;
 create trigger set_house_updated_at
@@ -383,7 +264,7 @@ create trigger add_house_owner_to_bridge
 after insert on public.house
 for each row execute function public.tg_add_house_owner_to_bridge();
 
--- When a task is completed, update task timing and user points.
+-- When a task is completed, update task timing, user points, and streak.
 create or replace function public.tg_apply_task_completion()
 returns trigger
 language plpgsql
@@ -391,6 +272,15 @@ as $$
 declare
   v_house_id uuid;
   v_frequency integer;
+  v_last_streak_on date;
+  v_last_seen_travel_offset integer;
+  v_current_streak integer;
+  v_total_travel_offset integer;
+  v_completion_date date;
+  v_raw_gap integer;
+  v_travel_gap integer;
+  v_effective_gap integer;
+  v_next_streak integer;
 begin
   select t.house_id, t.frequency_days
     into v_house_id, v_frequency
@@ -407,8 +297,47 @@ begin
     next_due_date = (new.completed_at::date + (v_frequency || ' days')::interval)::date
   where id = new.task_id;
 
+  -- Lock membership row to keep streak updates consistent during concurrent completions.
+  select
+    b.last_opened_on,
+    b.last_seen_travel_offset_days,
+    b.current_streak_days
+  into
+    v_last_streak_on,
+    v_last_seen_travel_offset,
+    v_current_streak
+  from public.user_house_bridge b
+  where b.user_id = new.user_id
+    and b.house_id = v_house_id
+  for update;
+
+  select h.travel_offset_days
+    into v_total_travel_offset
+  from public.house h
+  where h.id = v_house_id;
+
+  v_completion_date := new.completed_at::date;
+  if v_last_streak_on is null then
+    v_next_streak := 1;
+  elsif v_last_streak_on = v_completion_date then
+    v_next_streak := coalesce(v_current_streak, 0);
+  else
+    v_raw_gap := greatest(0, v_completion_date - v_last_streak_on);
+    v_travel_gap := greatest(0, coalesce(v_total_travel_offset, 0) - coalesce(v_last_seen_travel_offset, 0));
+    v_effective_gap := greatest(0, v_raw_gap - v_travel_gap);
+    if v_effective_gap <= 1 then
+      v_next_streak := coalesce(v_current_streak, 0) + 1;
+    else
+      v_next_streak := 1;
+    end if;
+  end if;
+
   update public.user_house_bridge
-  set total_points = total_points + new.points_awarded
+  set
+    total_points = total_points + new.points_awarded,
+    current_streak_days = v_next_streak,
+    last_opened_on = v_completion_date,
+    last_seen_travel_offset_days = coalesce(v_total_travel_offset, 0)
   where user_id = new.user_id
     and house_id = v_house_id;
 

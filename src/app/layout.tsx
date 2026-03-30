@@ -12,11 +12,10 @@ export const metadata: Metadata = {
   description: "Home cleaning support tool powered by Supabase.",
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icon.svg", sizes: "any" },
+      { url: "/nadeef-logo.png", type: "image/png" },
     ],
-    apple: [{ url: "/icon.svg" }],
-    shortcut: ["/icon.svg"],
+    apple: [{ url: "/nadeef-logo.png" }],
+    shortcut: ["/nadeef-logo.png"],
   },
 };
 

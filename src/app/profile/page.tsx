@@ -1,11 +1,11 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
+import BottomNav from "@/components/bottom-nav";
 
 type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type BridgeRow = Database["public"]["Tables"]["user_house_bridge"]["Row"];
@@ -680,38 +680,7 @@ After signing up, enter this house code to join: ${inviteCode}`;
         </section>
       </div>
 
-      <nav className="fixed bottom-0 z-50 w-full rounded-t-[1.5rem] bg-[#f7f9fb]/90 shadow-[0_-10px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
-        <div className="flex items-center justify-around px-4 pb-6 pt-3">
-          <Link
-            href="/home"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500"
-          >
-            <span>🏠</span>
-            <span className="text-[11px] font-medium tracking-wide">Home</span>
-          </Link>
-          <Link
-            href="/tasks"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500"
-          >
-            <span>📝</span>
-            <span className="text-[11px] font-medium tracking-wide">Tasks</span>
-          </Link>
-          <Link
-            href="/leaderboard"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500"
-          >
-            <span>🏆</span>
-            <span className="text-[11px] font-medium tracking-wide">Leaderboard</span>
-          </Link>
-          <Link
-            href="/profile"
-            className="flex flex-col items-center justify-center rounded-2xl bg-teal-50 px-5 py-2 text-teal-700"
-          >
-            <span>👤</span>
-            <span className="text-[11px] font-medium tracking-wide">Profile</span>
-          </Link>
-        </div>
-      </nav>
+      <BottomNav />
     </main>
   );
 }

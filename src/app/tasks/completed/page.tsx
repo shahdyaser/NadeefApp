@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
+import BottomNav from "@/components/bottom-nav";
 
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Pick<Database["public"]["Tables"]["task"]["Row"], "id" | "name" | "room_id">;
@@ -382,7 +383,11 @@ export default function CompletedTasksPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-bold text-slate-900">{item.taskName}</p>
+                      <p className="text-sm font-bold text-slate-900">
+                        <Link href={`/tasks/${item.history.task_id}`} className="hover:text-teal-700">
+                          {item.taskName}
+                        </Link>
+                      </p>
                       <p className="mt-1 text-xs text-slate-500">
                         Done {formatCompletedAt(item.history.completed_at)}
                       </p>
@@ -431,24 +436,7 @@ export default function CompletedTasksPage() {
         ))}
       </section>
 
-      <nav className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-around rounded-t-[1.5rem] bg-white/90 px-4 pb-5 pt-3 shadow-[0_-10px_30px_rgba(0,0,0,0.04)] backdrop-blur-xl">
-        <Link href="/home" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">🏠</span>
-          <span className="text-[11px] font-medium">Home</span>
-        </Link>
-        <Link href="/tasks" className="flex flex-col items-center rounded-2xl bg-teal-50 px-5 py-2 text-teal-700">
-          <span className="text-lg">📝</span>
-          <span className="text-[11px] font-medium">Tasks</span>
-        </Link>
-        <Link href="/leaderboard" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">🏆</span>
-          <span className="text-[11px] font-medium">Leaderboard</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">👤</span>
-          <span className="text-[11px] font-medium">Profile</span>
-        </Link>
-      </nav>
+      <BottomNav />
     </main>
   );
 }

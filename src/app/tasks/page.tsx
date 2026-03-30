@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
+import BottomNav from "@/components/bottom-nav";
 
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Database["public"]["Tables"]["task"]["Row"];
@@ -109,6 +110,7 @@ type MemberProfile = {
 };
 type TasksCachePayload = {
   userId: string | null;
+  canManageTasks: boolean;
   tasksWithRoom: TaskWithRoom[];
   memberProfiles: Record<string, MemberProfile>;
   freshness: number;
@@ -117,6 +119,7 @@ type TasksCachePayload = {
   overdue: number;
 };
 const TASKS_CACHE_KEY = "tasks";
+const SWIPE_ACTION_WIDTH = 204;
 
 function initialsFromName(name: string) {
   return (
@@ -146,7 +149,9 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(!cachedTasks);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(cachedTasks?.userId ?? null);
+  const [canManageTasks, setCanManageTasks] = useState(cachedTasks?.canManageTasks ?? false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
   const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>(cachedTasks?.tasksWithRoom ?? []);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>(
     cachedTasks?.memberProfiles ?? {},
@@ -155,6 +160,11 @@ export default function TasksPage() {
   const [doneToday, setDoneToday] = useState(cachedTasks?.doneToday ?? 0);
   const [dueToday, setDueToday] = useState(cachedTasks?.dueToday ?? 0);
   const [overdue, setOverdue] = useState(cachedTasks?.overdue ?? 0);
+  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [editTaskName, setEditTaskName] = useState("");
+  const [editTaskDueDate, setEditTaskDueDate] = useState("");
+  const [editTaskFrequencyDays, setEditTaskFrequencyDays] = useState(3);
+  const [editTaskEffortPoints, setEditTaskEffortPoints] = useState(10);
 
   const loadTasks = useCallback(async () => {
       if (!supabaseClient) {
@@ -176,7 +186,7 @@ export default function TasksPage() {
       setUserId(uid);
       const { data: membershipData, error: membershipError } = await supabaseClient
         .from("user_house_bridge")
-        .select("house_id")
+        .select("house_id,role")
         .eq("user_id", uid)
         .limit(1);
 
@@ -187,10 +197,12 @@ export default function TasksPage() {
       }
 
       const houseId = membershipData?.[0]?.house_id;
+      const role = membershipData?.[0]?.role;
       if (!houseId) {
         router.replace("/setup");
         return;
       }
+      setCanManageTasks(role === "owner" || role === "member");
 
       const { data: roomData, error: roomError } = await supabaseClient
         .from("room")
@@ -241,12 +253,9 @@ export default function TasksPage() {
           new Date(row.task.last_completed_at).toISOString().slice(0, 10) === today,
       ).length;
 
-      const scopedActive = active.filter(
-        (row) => !!row.task.next_due_date && row.task.next_due_date <= today,
-      );
       const roomFreshnessValues = (roomData ?? []).map((room) =>
         getFreshnessFromTasks(
-          scopedActive
+          active
             .filter((row) => row.task.room_id === room.id)
             .map((row) => row.task),
           today,
@@ -272,6 +281,7 @@ export default function TasksPage() {
       setDoneToday(doneTodayCount);
       setViewCache<TasksCachePayload>(TASKS_CACHE_KEY, {
         userId: uid,
+        canManageTasks: role === "owner" || role === "member",
         tasksWithRoom: rows,
         memberProfiles: Object.fromEntries((memberData ?? []).map((m) => [m.user_id, m])) as Record<
           string,
@@ -313,6 +323,74 @@ export default function TasksPage() {
 
     playDoneSound();
     setCompletingTaskId(null);
+    await loadTasks();
+  }
+
+  async function handleSkipTask(task: TaskRow) {
+    if (!supabaseClient || !canManageTasks) return;
+    setError(null);
+    const nextDue = new Date();
+    nextDue.setDate(nextDue.getDate() + Math.max(1, task.frequency_days));
+    const { error: skipError } = await supabaseClient
+      .from("task")
+      .update({
+        next_due_date: nextDue.toISOString().slice(0, 10),
+        status: "active",
+      })
+      .eq("id", task.id);
+    if (skipError) {
+      setError(skipError.message);
+      return;
+    }
+    await loadTasks();
+  }
+
+  async function handleDeleteTask(task: TaskRow) {
+    if (!supabaseClient || !canManageTasks) return;
+    setError(null);
+    const confirmed = window.confirm(`Delete "${task.name}"? This will also remove its history.`);
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabaseClient
+      .from("task")
+      .delete()
+      .eq("id", task.id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    await loadTasks();
+  }
+
+  function openEditTaskModal(task: TaskRow) {
+    if (!canManageTasks) return;
+    setEditingTask(task);
+    setEditTaskName(task.name);
+    setEditTaskDueDate(task.next_due_date ?? new Date().toISOString().slice(0, 10));
+    setEditTaskFrequencyDays(Math.max(1, task.frequency_days));
+    setEditTaskEffortPoints(Math.max(10, Math.min(30, task.effort_points)));
+  }
+
+  async function handleSaveTaskEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabaseClient || !editingTask || !canManageTasks) return;
+    setError(null);
+    setSavingTaskEdit(true);
+    const { error: updateError } = await supabaseClient
+      .from("task")
+      .update({
+        name: editTaskName.trim(),
+        next_due_date: editTaskDueDate,
+        frequency_days: Math.max(1, editTaskFrequencyDays),
+        effort_points: Math.max(10, Math.min(30, Math.round(editTaskEffortPoints / 10) * 10)),
+      })
+      .eq("id", editingTask.id);
+    setSavingTaskEdit(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setEditingTask(null);
     await loadTasks();
   }
 
@@ -472,6 +550,10 @@ export default function TasksPage() {
             fallback="No overdue tasks."
             completingTaskId={completingTaskId}
             onConfirmTask={handleNadeefTask}
+            onEditTask={openEditTaskModal}
+            onSkipTask={handleSkipTask}
+            onDeleteTask={handleDeleteTask}
+            canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
             currentUserId={userId}
           />
@@ -482,6 +564,10 @@ export default function TasksPage() {
             fallback="No tasks due today."
             completingTaskId={completingTaskId}
             onConfirmTask={handleNadeefTask}
+            onEditTask={openEditTaskModal}
+            onSkipTask={handleSkipTask}
+            onDeleteTask={handleDeleteTask}
+            canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
             currentUserId={userId}
           />
@@ -492,6 +578,10 @@ export default function TasksPage() {
             fallback="No upcoming tasks."
             completingTaskId={completingTaskId}
             onConfirmTask={handleNadeefTask}
+            onEditTask={openEditTaskModal}
+            onSkipTask={handleSkipTask}
+            onDeleteTask={handleDeleteTask}
+            canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
             currentUserId={userId}
           />
@@ -502,6 +592,10 @@ export default function TasksPage() {
             fallback="No tasks later this month."
             completingTaskId={completingTaskId}
             onConfirmTask={handleNadeefTask}
+            onEditTask={openEditTaskModal}
+            onSkipTask={handleSkipTask}
+            onDeleteTask={handleDeleteTask}
+            canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
             currentUserId={userId}
           />
@@ -512,44 +606,97 @@ export default function TasksPage() {
             fallback="No later tasks."
             completingTaskId={completingTaskId}
             onConfirmTask={handleNadeefTask}
+            onEditTask={openEditTaskModal}
+            onSkipTask={handleSkipTask}
+            onDeleteTask={handleDeleteTask}
+            canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
             currentUserId={userId}
           />
         </div>
       </section>
 
-      <nav className="fixed bottom-0 z-50 w-full rounded-t-[1.5rem] bg-[#f7f9fb]/90 shadow-[0_-10px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
-        <div className="flex items-center justify-around px-4 pb-6 pt-3">
-          <Link
-            href="/home"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500"
+      {editingTask ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSaveTaskEdit}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.2)]"
           >
-            <span>🏠</span>
-            <span className="text-[11px] font-medium tracking-wide">Home</span>
-          </Link>
-          <Link
-            href="/tasks"
-            className="flex flex-col items-center justify-center rounded-2xl bg-teal-50 px-5 py-2 text-teal-700"
-          >
-            <span>📝</span>
-            <span className="text-[11px] font-medium tracking-wide">Tasks</span>
-          </Link>
-          <Link
-            href="/leaderboard"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500 hover:text-teal-700"
-          >
-            <span>🏆</span>
-            <span className="text-[11px] font-medium tracking-wide">Leaderboard</span>
-          </Link>
-          <Link
-            href="/profile"
-            className="flex flex-col items-center justify-center px-5 py-2 text-slate-500 hover:text-teal-700"
-          >
-            <span>👤</span>
-            <span className="text-[11px] font-medium tracking-wide">Profile</span>
-          </Link>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Edit Task</h3>
+              <button
+                type="button"
+                onClick={() => setEditingTask(null)}
+                className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Task Name
+              </span>
+              <input
+                required
+                value={editTaskName}
+                onChange={(event) => setEditTaskName(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+                placeholder="Task name"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Due Date
+              </span>
+              <input
+                required
+                type="date"
+                value={editTaskDueDate}
+                onChange={(event) => setEditTaskDueDate(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Frequency (days)
+              </span>
+              <input
+                required
+                type="number"
+                min={1}
+                value={editTaskFrequencyDays}
+                onChange={(event) =>
+                  setEditTaskFrequencyDays(Math.max(1, Number(event.target.value) || 1))
+                }
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Effort Points (10/20/30)
+              </span>
+              <select
+                value={editTaskEffortPoints}
+                onChange={(event) => setEditTaskEffortPoints(Number(event.target.value))}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-400"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              disabled={savingTaskEdit}
+              className="w-full rounded-xl bg-teal-700 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {savingTaskEdit ? "Saving..." : "Save Task"}
+            </button>
+          </form>
         </div>
-      </nav>
+      ) : null}
+
+      <BottomNav />
     </main>
   );
 }
@@ -560,6 +707,10 @@ function TaskGroup({
   items,
   fallback,
   onConfirmTask,
+  onEditTask,
+  onSkipTask,
+  onDeleteTask,
+  canManageTasks,
   completingTaskId,
   memberProfiles,
   currentUserId,
@@ -569,6 +720,10 @@ function TaskGroup({
   items: TaskWithRoom[];
   fallback: string;
   onConfirmTask: (task: TaskRow) => void;
+  onEditTask: (task: TaskRow) => void;
+  onSkipTask: (task: TaskRow) => void;
+  onDeleteTask: (task: TaskRow) => void;
+  canManageTasks: boolean;
   completingTaskId: string | null;
   memberProfiles: Record<string, MemberProfile>;
   currentUserId: string | null;
@@ -591,6 +746,47 @@ function TaskGroup({
       : tone === "due"
         ? "border-orange-500"
         : "border-slate-300";
+  const [activeActionTaskId, setActiveActionTaskId] = useState<string | null>(null);
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const groupedByRoom = useMemo(() => {
+    const groups = new Map<string, { roomLabel: string; rows: TaskWithRoom[] }>();
+    for (const row of items) {
+      const roomLabel = row.room?.name ?? "Unlinked Room";
+      const key = row.room?.id ?? "unlinked-room";
+      const existing = groups.get(key);
+      if (existing) {
+        existing.rows.push(row);
+      } else {
+        groups.set(key, { roomLabel, rows: [row] });
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => a.roomLabel.localeCompare(b.roomLabel));
+  }, [items]);
+
+  function handleTaskPointerDown(taskId: string, clientX: number) {
+    const baseOffset = activeActionTaskId === taskId ? -SWIPE_ACTION_WIDTH : 0;
+    setDragTaskId(taskId);
+    setDragStartX(clientX);
+    setDragOffset(baseOffset);
+  }
+
+  function handleTaskPointerMove(taskId: string, clientX: number) {
+    if (dragTaskId !== taskId) return;
+    const next = dragOffset + (clientX - dragStartX);
+    const clamped = Math.min(0, Math.max(-SWIPE_ACTION_WIDTH, next));
+    setDragOffset(clamped);
+    setDragStartX(clientX);
+  }
+
+  function handleTaskPointerEnd(taskId: string) {
+    if (dragTaskId !== taskId) return;
+    const shouldOpen = dragOffset <= -(SWIPE_ACTION_WIDTH * 0.45);
+    setActiveActionTaskId(shouldOpen ? taskId : null);
+    setDragTaskId(null);
+    setDragOffset(0);
+  }
 
   return (
     <section className="space-y-2">
@@ -605,93 +801,160 @@ function TaskGroup({
         <p className="rounded-xl bg-white p-3 text-xs text-slate-500 shadow-sm">{fallback}</p>
       )}
 
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        {items.map(({ task, room }) => {
-          const assigneeId = task.assigned_to ?? currentUserId ?? "";
-          const profile = assigneeId ? memberProfiles[assigneeId] : undefined;
-          const label =
-            profile?.display_name?.trim() ||
-            (assigneeId && assigneeId === currentUserId ? "You" : "Member");
-          const initials = initialsFromName(label);
+      <div className="space-y-3">
+        {groupedByRoom.map((group) => (
+          <section key={group.roomLabel} className="space-y-2">
+            <h3 className="px-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              {group.roomLabel}
+            </h3>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {group.rows.map(({ task, room }) => {
+                const assigneeId = task.assigned_to ?? currentUserId ?? "";
+                const profile = assigneeId ? memberProfiles[assigneeId] : undefined;
+                const label =
+                  profile?.display_name?.trim() ||
+                  (assigneeId && assigneeId === currentUserId ? "You" : "Member");
+                const initials = initialsFromName(label);
 
-          return (
-            <div
-            key={task.id}
-            className={`flex items-center justify-between rounded-xl border-l-4 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md ${borderColor}`}
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
-                {room ? ROOM_ICON[room.type] : "📌"}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-xs font-bold text-slate-900">{task.name}</p>
-                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-                    {room?.name ?? "Room"}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <div className="flex">
-                    {[1, 2, 3].map((star) => (
-                      <span
-                        key={star}
-                        className={`text-[10px] ${
-                          star <= effortStars(task.effort_points)
-                            ? "text-amber-500"
-                            : "text-slate-300"
-                        }`}
-                      >
-                        ★
-                      </span>
-                    ))}
-                  </div>
-                  <span
-                    className={`text-[10px] font-medium ${
-                      tone === "error"
-                        ? "text-red-600"
-                        : tone === "due"
-                          ? "text-orange-600"
-                          : "text-slate-500"
-                    }`}
-                  >
-                    {relativeDue(task.next_due_date)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-[8px] font-bold text-slate-600"
-                style={
-                  profile?.avatar_url
-                    ? {
-                        backgroundImage: `url("${profile.avatar_url}")`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
+                return (
+                  <div key={task.id} className="relative overflow-hidden rounded-xl">
+                    {canManageTasks ? (
+                      <div className="absolute inset-y-0 right-0 flex w-[204px]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveActionTaskId(null);
+                            onEditTask(task);
+                          }}
+                          className="flex w-1/3 items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveActionTaskId(null);
+                            void onSkipTask(task);
+                          }}
+                          className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
+                        >
+                          Skip
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveActionTaskId(null);
+                            void onDeleteTask(task);
+                          }}
+                          className="flex w-1/3 items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                    <div
+                      className={`flex items-center justify-between rounded-xl border-l-4 bg-white p-2.5 shadow-sm transition-transform ${borderColor}`}
+                      style={{
+                        transform: `translateX(${
+                          canManageTasks
+                            ? dragTaskId === task.id
+                              ? dragOffset
+                              : activeActionTaskId === task.id
+                                ? -SWIPE_ACTION_WIDTH
+                                : 0
+                            : 0
+                        }px)`,
+                        touchAction: "pan-y",
+                      }}
+                      onPointerDown={
+                        canManageTasks ? (event) => handleTaskPointerDown(task.id, event.clientX) : undefined
                       }
-                    : undefined
-                }
-              >
-                {!profile?.avatar_url ? initials : null}
-              </div>
-              <button
-                type="button"
-                onClick={() => onConfirmTask(task)}
-                disabled={completingTaskId === task.id}
-                className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                  completingTaskId === task.id
-                    ? "bg-teal-600/80 text-white"
-                    : "bg-teal-100 text-teal-700"
-                }`}
-              >
-                <span className={completingTaskId === task.id ? "animate-spin" : ""}>
-                  {completingTaskId === task.id ? "◌" : "✓"}
-                </span>
-              </button>
+                      onPointerMove={
+                        canManageTasks ? (event) => handleTaskPointerMove(task.id, event.clientX) : undefined
+                      }
+                      onPointerUp={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
+                      onPointerCancel={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
+                          {room ? ROOM_ICON[room.type] : "📌"}
+                        </div>
+                        <div className="min-w-0">
+                          <Link
+                            href={`/tasks/${task.id}`}
+                            className="truncate text-xs font-bold text-slate-900 hover:text-teal-700"
+                          >
+                            {task.name}
+                          </Link>
+                          <span className="mt-1 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                            {room?.name ?? "Room"}
+                          </span>
+                          <div className="mt-1 flex items-center gap-2">
+                            <div className="flex">
+                              {[1, 2, 3].map((star) => (
+                                <span
+                                  key={star}
+                                  className={`text-[10px] ${
+                                    star <= effortStars(task.effort_points)
+                                      ? "text-amber-500"
+                                      : "text-slate-300"
+                                  }`}
+                                >
+                                  ★
+                                </span>
+                              ))}
+                            </div>
+                            <span
+                              className={`text-[10px] font-medium ${
+                                tone === "error"
+                                  ? "text-red-600"
+                                  : tone === "due"
+                                    ? "text-orange-600"
+                                    : "text-slate-500"
+                              }`}
+                            >
+                              {relativeDue(task.next_due_date)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-[8px] font-bold text-slate-600"
+                          style={
+                            profile?.avatar_url
+                              ? {
+                                  backgroundImage: `url("${profile.avatar_url}")`,
+                                  backgroundSize: "cover",
+                                  backgroundPosition: "center",
+                                }
+                              : undefined
+                          }
+                        >
+                          {!profile?.avatar_url ? initials : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onConfirmTask(task)}
+                          disabled={completingTaskId === task.id}
+                          className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                            completingTaskId === task.id
+                              ? "bg-teal-600/80 text-white"
+                              : "bg-teal-100 text-teal-700"
+                          }`}
+                        >
+                          <span className={completingTaskId === task.id ? "animate-spin" : ""}>
+                            {completingTaskId === task.id ? "◌" : "✓"}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          );
-        })}
+          </section>
+        ))}
       </div>
     </section>
   );

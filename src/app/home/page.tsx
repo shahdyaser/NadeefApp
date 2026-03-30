@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
+import BottomNav from "@/components/bottom-nav";
 
 type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
@@ -14,6 +15,24 @@ type TaskRow = Pick<
   "id" | "name" | "room_id" | "status" | "next_due_date" | "effort_points"
 >;
 type RoomType = Database["public"]["Enums"]["room_type"];
+type RoomTaskSetupMode = "auto_library" | "empty_room";
+type RoomTemplateKey =
+  | "bedroom"
+  | "dressing_room"
+  | "bathroom"
+  | "kitchen"
+  | "dining_room"
+  | "living_room"
+  | "kids_room"
+  | "office_room"
+  | "entrance_hallway"
+  | "laundry_room"
+  | "balcony"
+  | "terrace"
+  | "basement"
+  | "storage_room"
+  | "garage"
+  | "other";
 type HomeCachePayload = {
   house: HouseRow | null;
   rooms: RoomRow[];
@@ -21,18 +40,213 @@ type HomeCachePayload = {
   totalPoints: number;
   streakDays: number;
   canManageHome: boolean;
+  notificationsEnabled: boolean;
 };
 const HOME_CACHE_KEY = "home";
+const DEFAULT_ROOM_TEMPLATE: RoomTemplateKey = "bedroom";
+type ReminderSlot = "morning" | "evening";
+const REMINDER_CONFIG: Record<
+  ReminderSlot,
+  { hour: number; title: string; body: (pendingCount: number) => string }
+> = {
+  morning: {
+    hour: 8,
+    title: "Good Morning from Nadeef ☀️",
+    body: (pendingCount) =>
+      `🌿 A fresh home starts with one small win. You have ${pendingCount} task${pendingCount === 1 ? "" : "s"} today — you got this!`,
+  },
+  evening: {
+    hour: 20,
+    title: "Nadeef Evening Boost 🌙",
+    body: (pendingCount) =>
+      `✨ You are close! Finish the remaining ${pendingCount} task${pendingCount === 1 ? "" : "s"} and end the day proud.`,
+  },
+};
 
-const ROOM_MODAL_OPTIONS: Array<{ type: RoomType; label: string; icon: string }> = [
-  { type: "bedroom", label: "Bedroom", icon: "🛏️" },
-  { type: "bathroom", label: "Bath", icon: "🛁" },
-  { type: "kitchen", label: "Kitchen", icon: "🍳" },
-  { type: "living_room", label: "Living", icon: "🛋️" },
-  { type: "laundry", label: "Laundry", icon: "🧺" },
-  { type: "office", label: "Office", icon: "💻" },
-  { type: "outdoor", label: "Patio", icon: "🌿" },
-  { type: "other", label: "Other", icon: "✨" },
+function toLocalDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getNextReminderTime(now: Date) {
+  const slots: Array<{ slot: ReminderSlot; at: Date }> = (Object.keys(
+    REMINDER_CONFIG,
+  ) as ReminderSlot[]).map((slot) => {
+    const at = new Date(now);
+    at.setHours(REMINDER_CONFIG[slot].hour, 0, 0, 0);
+    if (at <= now) {
+      at.setDate(at.getDate() + 1);
+    }
+    return { slot, at };
+  });
+  slots.sort((a, b) => a.at.getTime() - b.at.getTime());
+  const next = slots[0];
+  return next.at;
+}
+
+function hasSlotPassedToday(slot: ReminderSlot, now: Date) {
+  return now.getHours() >= REMINDER_CONFIG[slot].hour;
+}
+
+function getReminderStorageKey(houseId: string, slot: ReminderSlot) {
+  return `nadeef:reminder:${houseId}:${slot}`;
+}
+
+async function countPendingTasksToday(
+  supabaseClient: ReturnType<typeof getSupabaseBrowserClient>,
+  houseId: string,
+  todayIso: string,
+) {
+  const { count, error } = await supabaseClient
+    .from("task")
+    .select("id", { count: "exact", head: true })
+    .eq("house_id", houseId)
+    .eq("status", "active")
+    .not("next_due_date", "is", null)
+    .lte("next_due_date", todayIso);
+  if (error) return null;
+  return Number(count ?? 0);
+}
+
+function getSentToday(slot: ReminderSlot, houseId: string, todayKey: string) {
+  if (typeof window === "undefined") return false;
+  return (
+    window.localStorage.getItem(getReminderStorageKey(houseId, slot)) === todayKey
+  );
+}
+
+function markSentToday(slot: ReminderSlot, houseId: string, todayKey: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(getReminderStorageKey(houseId, slot), todayKey);
+}
+
+async function sendReminderForSlot({
+  slot,
+  houseId,
+  todayKey,
+  pendingCount,
+  registration,
+}: {
+  slot: ReminderSlot;
+  houseId: string;
+  todayKey: string;
+  pendingCount: number;
+  registration: ServiceWorkerRegistration;
+}) {
+  const slotConfig = REMINDER_CONFIG[slot];
+  await registration.showNotification(slotConfig.title, {
+    body: slotConfig.body(pendingCount),
+    icon: "/nadeef-logo.png",
+    badge: "/nadeef-logo.png",
+    tag: `nadeef-${slot}-${todayKey}`,
+    data: { url: "/tasks/due-today?window=today" },
+  });
+  markSentToday(slot, houseId, todayKey);
+}
+
+function getDueReminderSlots(now: Date, houseId: string, todayKey: string) {
+  return (Object.keys(REMINDER_CONFIG) as ReminderSlot[]).filter(
+    (slot) => hasSlotPassedToday(slot, now) && !getSentToday(slot, houseId, todayKey),
+  );
+}
+
+function toNextReminderDelayMs(now: Date) {
+  const next = getNextReminderTime(now);
+  return Math.max(1000, next.getTime() - Date.now());
+}
+
+function isNotificationSupported() {
+  return (
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator
+  );
+}
+
+function shouldRequestNotificationPermission() {
+  return isNotificationSupported() && Notification.permission === "default";
+}
+
+function canSendNotificationsNow() {
+  return isNotificationSupported() && Notification.permission === "granted";
+}
+
+function shouldSkipNotificationSetup({
+  supabaseClient,
+  house,
+  notificationsEnabled,
+}: {
+  supabaseClient: ReturnType<typeof getSupabaseBrowserClient> | null;
+  house: HouseRow | null;
+  notificationsEnabled: boolean;
+}) {
+  return !supabaseClient || !house || !notificationsEnabled || !isNotificationSupported();
+}
+
+function getTodayKey() {
+  return toLocalDateKey(new Date());
+}
+
+function getTodayIso() {
+  return toLocalDateKey(new Date());
+}
+
+async function trySendDueReminders({
+  supabaseClient,
+  registration,
+  houseId,
+}: {
+  supabaseClient: ReturnType<typeof getSupabaseBrowserClient>;
+  registration: ServiceWorkerRegistration;
+  houseId: string;
+}) {
+  const now = new Date();
+  const todayKey = getTodayKey();
+  const dueSlots = getDueReminderSlots(now, houseId, todayKey);
+  if (!dueSlots.length) return;
+
+  const pendingCount = await countPendingTasksToday(
+    supabaseClient,
+    houseId,
+    getTodayIso(),
+  );
+  if (pendingCount === null || pendingCount <= 0) return;
+
+  for (const slot of dueSlots) {
+    await sendReminderForSlot({
+      slot,
+      houseId,
+      todayKey,
+      pendingCount,
+      registration,
+    });
+  }
+}
+
+const ROOM_MODAL_OPTIONS: Array<{
+  templateKey: RoomTemplateKey;
+  type: RoomType;
+  label: string;
+  icon: string;
+}> = [
+  { templateKey: "bedroom", type: "bedroom", label: "Bedroom", icon: "🛏️" },
+  { templateKey: "dressing_room", type: "bedroom", label: "Dressing Room", icon: "👗" },
+  { templateKey: "bathroom", type: "bathroom", label: "Bathroom", icon: "🛁" },
+  { templateKey: "kitchen", type: "kitchen", label: "Kitchen", icon: "🍳" },
+  { templateKey: "dining_room", type: "dining_room", label: "Dining Room", icon: "🍽️" },
+  { templateKey: "living_room", type: "living_room", label: "Living Room", icon: "🛋️" },
+  { templateKey: "kids_room", type: "bedroom", label: "Kids Room", icon: "🧸" },
+  { templateKey: "office_room", type: "office", label: "Office Room", icon: "💻" },
+  { templateKey: "entrance_hallway", type: "other", label: "Entrance Hallway", icon: "🚪" },
+  { templateKey: "laundry_room", type: "laundry", label: "Laundry Room", icon: "🧺" },
+  { templateKey: "balcony", type: "outdoor", label: "Balcony", icon: "🌿" },
+  { templateKey: "terrace", type: "outdoor", label: "Terrace", icon: "🌤️" },
+  { templateKey: "basement", type: "other", label: "Basement", icon: "🏚️" },
+  { templateKey: "storage_room", type: "other", label: "Storage Room", icon: "📦" },
+  { templateKey: "garage", type: "garage", label: "Garage", icon: "🚗" },
+  { templateKey: "other", type: "other", label: "Other", icon: "✨" },
 ];
 
 const ROOM_EMOJI: Record<RoomType, string> = {
@@ -52,16 +266,8 @@ function toRoomLabel(type: string) {
   return type.replaceAll("_", " ").replace(/\b\w/g, (x) => x.toUpperCase());
 }
 
-function dateDiffDays(fromIsoDate: string, toIsoDate: string) {
-  const [fromY, fromM, fromD] = fromIsoDate.split("-").map(Number);
-  const [toY, toM, toD] = toIsoDate.split("-").map(Number);
-  const fromUtc = Date.UTC(fromY, fromM - 1, fromD);
-  const toUtc = Date.UTC(toY, toM - 1, toD);
-  return Math.floor((toUtc - fromUtc) / 86400000);
-}
-
 function getRoomFreshnessTone(freshness: number) {
-  if (freshness >= 80) {
+  if (freshness === 100) {
     return {
       cardClass: "border border-teal-100",
       badgeClass: "bg-teal-100 text-teal-800",
@@ -88,7 +294,7 @@ function getRoomFreshnessTone(freshness: number) {
 }
 
 function getFreshnessMessage(freshness: number) {
-  if (freshness >= 80) {
+  if (freshness === 100) {
     return {
       text: "Amazing job. Your home is shining today.",
       percentageClass: "text-teal-700",
@@ -154,12 +360,16 @@ export default function HomePage() {
   const [totalPoints, setTotalPoints] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
   const [canManageHome, setCanManageHome] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
   const [roomType, setRoomType] = useState<RoomType>("other");
+  const [roomTemplate, setRoomTemplate] = useState<RoomTemplateKey>(DEFAULT_ROOM_TEMPLATE);
   const [roomIconRef, setRoomIconRef] = useState("");
+  const [roomTaskSetupMode, setRoomTaskSetupMode] =
+    useState<RoomTaskSetupMode>("auto_library");
 
   async function loadHome(background = false) {
     if (!supabaseClient) {
@@ -185,9 +395,7 @@ export default function HomePage() {
     const uid = sessionData.session.user.id;
     const { data: memberships, error: membershipError } = await supabaseClient
       .from("user_house_bridge")
-      .select(
-        "house_id,total_points,current_streak_days,last_opened_on,last_seen_travel_offset_days,role",
-      )
+      .select("house_id,total_points,current_streak_days,role,notifications_enabled")
       .eq("user_id", uid)
       .limit(1);
 
@@ -240,48 +448,16 @@ export default function HomePage() {
     setTasks((taskData ?? []) as TaskRow[]);
     setTotalPoints(member.total_points ?? 0);
     setCanManageHome(member.role === "owner" || member.role === "member");
-
-    let nextStreakDays = member.current_streak_days ?? 0;
-    if (!houseData.is_paused) {
-      const todayIso = new Date().toISOString().slice(0, 10);
-      const lastOpenedOn = member.last_opened_on;
-      const previousTravelOffset = member.last_seen_travel_offset_days ?? 0;
-      const totalTravelOffset = houseData.travel_offset_days ?? 0;
-
-      if (!lastOpenedOn) {
-        nextStreakDays = 1;
-      } else if (lastOpenedOn !== todayIso) {
-        const rawGap = dateDiffDays(lastOpenedOn, todayIso);
-        const travelGap = Math.max(0, totalTravelOffset - previousTravelOffset);
-        const effectiveGap = Math.max(0, rawGap - travelGap);
-        nextStreakDays = effectiveGap <= 1 ? nextStreakDays + 1 : 1;
-      }
-
-      if (!lastOpenedOn || lastOpenedOn !== todayIso || previousTravelOffset !== totalTravelOffset) {
-        const { error: streakUpdateError } = await supabaseClient
-          .from("user_house_bridge")
-          .update({
-            current_streak_days: nextStreakDays,
-            last_opened_on: todayIso,
-            last_seen_travel_offset_days: totalTravelOffset,
-          })
-          .eq("user_id", uid)
-          .eq("house_id", member.house_id);
-
-        if (streakUpdateError) {
-          setError(streakUpdateError.message);
-        }
-      }
-    }
-
-    setStreakDays(nextStreakDays);
+    setNotificationsEnabled(member.notifications_enabled ?? true);
+    setStreakDays(member.current_streak_days ?? 0);
     setViewCache<HomeCachePayload>(HOME_CACHE_KEY, {
       house: houseData,
       rooms: roomData ?? [],
       tasks: (taskData ?? []) as TaskRow[],
       totalPoints: member.total_points ?? 0,
-      streakDays: nextStreakDays,
+      streakDays: member.current_streak_days ?? 0,
       canManageHome: member.role === "owner" || member.role === "member",
+      notificationsEnabled: member.notifications_enabled ?? true,
     });
     setLoading(false);
   }
@@ -295,11 +471,66 @@ export default function HomePage() {
       setTotalPoints(cached.totalPoints);
       setStreakDays(cached.streakDays);
       setCanManageHome(cached.canManageHome);
+      setNotificationsEnabled(cached.notificationsEnabled ?? true);
       setLoading(false);
     }
     void loadHome(Boolean(cached));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (
+      shouldSkipNotificationSetup({
+        supabaseClient,
+        house,
+        notificationsEnabled,
+      })
+    ) {
+      return;
+    }
+
+    let timerId: number | null = null;
+    let cancelled = false;
+
+    async function registerAndSchedule() {
+      try {
+        await navigator.serviceWorker.register("/sw.js");
+        const registration = await navigator.serviceWorker.ready;
+        if (!registration || cancelled) return;
+
+        if (shouldRequestNotificationPermission()) {
+          await Notification.requestPermission();
+        }
+        if (!canSendNotificationsNow() || cancelled) return;
+
+        const scheduleNext = async () => {
+          if (cancelled) return;
+          await trySendDueReminders({
+            supabaseClient,
+            registration,
+            houseId: house.id,
+          });
+          const delay = toNextReminderDelayMs(new Date());
+          timerId = window.setTimeout(() => {
+            void scheduleNext();
+          }, delay);
+        };
+
+        await scheduleNext();
+      } catch {
+        // Ignore notification setup issues on unsupported platforms.
+      }
+    }
+
+    void registerAndSchedule();
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [house, notificationsEnabled, supabaseClient]);
 
   async function handleAddRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -312,12 +543,18 @@ export default function HomePage() {
     }
 
     setSaving(true);
-    const { error: insertError } = await supabaseClient.from("room").insert({
-      house_id: house.id,
-      name: roomName.trim(),
-      type: roomType,
-      icon_ref: roomIconRef.trim() || null,
-    });
+    const { data: sessionData } = await supabaseClient.auth.getSession();
+    const defaultAssigneeId = house.owner_id ?? sessionData.session?.user?.id ?? null;
+    const { data: newRoom, error: insertError } = await supabaseClient
+      .from("room")
+      .insert({
+        house_id: house.id,
+        name: roomName.trim(),
+        type: roomType,
+        icon_ref: roomIconRef.trim() || null,
+      })
+      .select("id")
+      .single();
     setSaving(false);
 
     if (insertError) {
@@ -325,18 +562,72 @@ export default function HomePage() {
       return;
     }
 
+    let addedTasksCount = 0;
+    if (roomTaskSetupMode === "auto_library" && roomTemplate !== "other" && newRoom?.id) {
+      const { data: libraryRows, error: libraryError } = await supabaseClient
+        .from("task_library")
+        .select("name,default_frequency_days,default_effort")
+        .eq("room_template", roomTemplate);
+      if (libraryError) {
+        setError(libraryError.message);
+        return;
+      }
+
+      const todayBase = new Date();
+      todayBase.setHours(0, 0, 0, 0);
+      const taskRows: Array<Database["public"]["Tables"]["task"]["Insert"]> = (
+        libraryRows ?? []
+      ).map((row) => {
+        const firstDue = new Date(todayBase);
+        firstDue.setDate(firstDue.getDate() + row.default_frequency_days);
+        return {
+          room_id: newRoom.id,
+          house_id: house.id,
+          assigned_to: defaultAssigneeId,
+          assigned_user_ids: defaultAssigneeId ? [defaultAssigneeId] : [],
+          assignment_mode: "together",
+          name: row.name,
+          frequency_days: row.default_frequency_days,
+          effort_points: row.default_effort * 10,
+          last_completed_at: null,
+          next_due_date: toLocalDateKey(firstDue),
+          status: "active",
+        };
+      });
+
+      if (taskRows.length > 0) {
+        const { error: taskInsertError } = await supabaseClient
+          .from("task")
+          .insert(taskRows);
+        if (taskInsertError) {
+          setError(taskInsertError.message);
+          return;
+        }
+      }
+      addedTasksCount = taskRows.length;
+    }
+
     setRoomName("");
     setRoomIconRef("");
+    setRoomTaskSetupMode("auto_library");
     setShowAddRoom(false);
-    setMessage("Room added.");
+    setMessage(
+      addedTasksCount > 0
+        ? `Room added with ${addedTasksCount} starter task${addedTasksCount === 1 ? "" : "s"}.`
+        : roomTaskSetupMode === "auto_library"
+          ? "Room added. No matching library tasks found for this room type."
+          : "Room added. You can now add tasks one by one.",
+    );
     await loadHome();
   }
 
   function openAddRoomModal() {
     setEditingRoomId(null);
     setRoomName("");
-    setRoomType("other");
+    setRoomType("bedroom");
+    setRoomTemplate(DEFAULT_ROOM_TEMPLATE);
     setRoomIconRef("");
+    setRoomTaskSetupMode("auto_library");
     setShowAddRoom(true);
   }
 
@@ -377,6 +668,40 @@ export default function HomePage() {
     }
 
     await handleAddRoom(event);
+  }
+
+  async function handleDeleteRoom() {
+    if (!supabaseClient || !editingRoomId) return;
+    if (!canManageHome) {
+      setError("Helpers can only view and complete tasks.");
+      return;
+    }
+    const targetRoom = rooms.find((room) => room.id === editingRoomId);
+    const confirmed = window.confirm(
+      `Delete "${targetRoom?.name ?? "this room"}"? This will remove the room and all its tasks.`,
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    const { error: deleteError } = await supabaseClient
+      .from("room")
+      .delete()
+      .eq("id", editingRoomId);
+    setSaving(false);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    setShowAddRoom(false);
+    setEditingRoomId(null);
+    setRoomName("");
+    setRoomIconRef("");
+    setMessage("Room deleted.");
+    await loadHome();
   }
 
   async function handleToggleTravelMode() {
@@ -473,11 +798,21 @@ export default function HomePage() {
       : 0;
   const homeFreshnessMeta = getFreshnessMessage(freshness);
 
+  const sortedRooms = [...rooms]
+    .map((room) => {
+      const roomActiveTasks = activeTasks.filter((task) => task.room_id === room.id);
+      return {
+        room,
+        roomFreshness: getFreshnessFromTasks(roomActiveTasks, today),
+      };
+    })
+    .sort((a, b) => a.roomFreshness - b.roomFreshness);
+
   return (
     <main className="min-h-screen bg-[#f7f9fb] pb-24 text-[#191c1e]">
       <header className="sticky top-0 z-40 flex h-16 items-center justify-between bg-white/90 px-4 sm:px-6 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <span className="text-teal-600">🌊</span>
+          <span className="text-teal-600">🏠</span>
           <h1 className="text-2xl font-bold tracking-tight text-teal-700">
             {house?.name ?? "Home"}
           </h1>
@@ -567,13 +902,11 @@ export default function HomePage() {
         </section>
 
         <section className="grid grid-cols-2 gap-4">
-          {rooms.map((room) => {
-            const roomActiveTasks = activeTasks.filter((task) => task.room_id === room.id);
+          {sortedRooms.map(({ room, roomFreshness }) => {
             const roomDueNowTasks = scopedActiveTasks.filter((task) => task.room_id === room.id);
             const roomOverdue = roomDueNowTasks.filter(
               (task) => !!task.next_due_date && task.next_due_date < today,
             ).length;
-            const roomFreshness = getFreshnessFromTasks(roomActiveTasks, today);
             const tone = getRoomFreshnessTone(roomFreshness);
 
             return (
@@ -634,24 +967,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <nav className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-around rounded-t-[1.5rem] bg-white/90 px-4 pb-5 pt-3 shadow-[0_-10px_30px_rgba(0,0,0,0.04)] backdrop-blur-xl">
-        <Link href="/home" className="flex flex-col items-center rounded-2xl bg-teal-50 px-5 py-2 text-teal-700">
-          <span className="text-lg">🏠</span>
-          <span className="text-[11px] font-medium">Home</span>
-        </Link>
-        <Link href="/tasks" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">📝</span>
-          <span className="text-[11px] font-medium">Tasks</span>
-        </Link>
-        <Link href="/leaderboard" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">🏆</span>
-          <span className="text-[11px] font-medium">Leaderboard</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center px-5 py-2 text-slate-400 hover:text-teal-600">
-          <span className="text-lg">👤</span>
-          <span className="text-[11px] font-medium">Profile</span>
-        </Link>
-      </nav>
+      <BottomNav />
 
       {showAddRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#191c1e]/20 p-4 backdrop-blur-sm">
@@ -693,14 +1009,22 @@ export default function HomePage() {
                 <label className="text-sm font-semibold uppercase tracking-wide text-orange-700">
                   Select Room Type
                 </label>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4">
                   {ROOM_MODAL_OPTIONS.map((option) => {
-                    const selected = roomType === option.type;
+                    const selected = roomTemplate === option.templateKey;
                     return (
                       <button
-                        key={option.type}
+                        key={option.templateKey}
                         type="button"
-                        onClick={() => setRoomType(option.type)}
+                        onClick={() => {
+                          setRoomTemplate(option.templateKey);
+                          setRoomType(option.type);
+                          if (option.templateKey === "other") {
+                            setRoomTaskSetupMode("empty_room");
+                          } else if (roomTaskSetupMode === "empty_room") {
+                            setRoomTaskSetupMode("auto_library");
+                          }
+                        }}
                         className={`flex flex-col items-center justify-center rounded-2xl p-4 text-center transition-all ${
                           selected
                             ? "bg-teal-50 text-teal-700 ring-2 ring-teal-300"
@@ -717,6 +1041,36 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {!editingRoomId && roomTemplate !== "other" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold uppercase tracking-wide text-orange-700">
+                    Task Setup Preference
+                  </label>
+                  <label className="flex items-start gap-2 rounded-xl border border-slate-200 p-3">
+                    <input
+                      type="radio"
+                      name="room_task_setup_mode"
+                      checked={roomTaskSetupMode === "auto_library"}
+                      onChange={() => setRoomTaskSetupMode("auto_library")}
+                    />
+                    <span className="text-sm text-slate-700">
+                      Automatically add starter tasks from task library.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 rounded-xl border border-slate-200 p-3">
+                    <input
+                      type="radio"
+                      name="room_task_setup_mode"
+                      checked={roomTaskSetupMode === "empty_room"}
+                      onChange={() => setRoomTaskSetupMode("empty_room")}
+                    />
+                    <span className="text-sm text-slate-700">
+                      Create an empty room and add tasks one by one.
+                    </span>
+                  </label>
+                </div>
+              )}
+
             </div>
 
             <div className="flex items-center gap-4 bg-slate-100 p-5 sm:p-8">
@@ -730,6 +1084,16 @@ export default function HomePage() {
               >
                 Cancel
               </button>
+              {editingRoomId ? (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteRoom()}
+                  disabled={saving}
+                  className="flex-1 rounded-full bg-red-600 py-4 font-bold text-white transition-all disabled:opacity-60"
+                >
+                  Delete
+                </button>
+              ) : null}
               <button
                 type="submit"
                 disabled={saving}
