@@ -719,6 +719,19 @@ with check (
   )
 );
 
+drop policy if exists bridge_update_own_profile_policy on public.user_house_bridge;
+create policy bridge_update_own_profile_policy
+on public.user_house_bridge
+for update
+using (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+)
+with check (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
+
 drop policy if exists bridge_delete_policy on public.user_house_bridge;
 create policy bridge_delete_policy
 on public.user_house_bridge

@@ -501,11 +501,10 @@ function DueTodayPageContent() {
             {group.tasks.map((task) => {
               const dueMeta = getDueMeta(task.next_due_date);
               const effortStars = Math.max(1, Math.min(3, Math.round(task.effort_points / 10)));
-              const assigneeId = task.assigned_to ?? userId ?? "";
+              const assigneeId =
+                task.assigned_user_ids?.[0] || task.assigned_to || null;
               const profile = assigneeId ? memberProfiles[assigneeId] : undefined;
-              const label =
-                profile?.display_name?.trim() ||
-                (assigneeId && assigneeId === userId ? "You" : "Member");
+              const label = profile?.display_name?.trim() || "Unassigned";
               const initials = initialsFromName(label);
 
               return (

@@ -297,7 +297,7 @@ export default function ProfilePage() {
       cleanAvatar = publicUrlData.publicUrl;
     }
 
-    const { error: updateError } = await supabaseClient
+    const { data: updatedRows, error: updateError } = await supabaseClient
       .from("user_house_bridge")
       .update({
         display_name: cleanName,
@@ -305,11 +305,16 @@ export default function ProfilePage() {
         notifications_enabled: notificationsEnabled,
       })
       .eq("user_id", currentUserId)
-      .eq("house_id", houseId);
+      .eq("house_id", houseId)
+      .select("user_id");
 
     setSavingProfile(false);
     if (updateError) {
       setError(updateError.message);
+      return;
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      setError("Settings were not saved due to permissions. Please try again.");
       return;
     }
 

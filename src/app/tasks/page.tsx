@@ -555,7 +555,6 @@ export default function TasksPage() {
             onDeleteTask={handleDeleteTask}
             canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
-            currentUserId={userId}
           />
           <TaskGroup
             title="Due Today"
@@ -569,7 +568,6 @@ export default function TasksPage() {
             onDeleteTask={handleDeleteTask}
             canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
-            currentUserId={userId}
           />
           <TaskGroup
             title="This Week"
@@ -583,7 +581,6 @@ export default function TasksPage() {
             onDeleteTask={handleDeleteTask}
             canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
-            currentUserId={userId}
           />
           <TaskGroup
             title="This Month"
@@ -597,7 +594,6 @@ export default function TasksPage() {
             onDeleteTask={handleDeleteTask}
             canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
-            currentUserId={userId}
           />
           <TaskGroup
             title="Later"
@@ -611,7 +607,6 @@ export default function TasksPage() {
             onDeleteTask={handleDeleteTask}
             canManageTasks={canManageTasks}
             memberProfiles={memberProfiles}
-            currentUserId={userId}
           />
         </div>
       </section>
@@ -713,7 +708,6 @@ function TaskGroup({
   canManageTasks,
   completingTaskId,
   memberProfiles,
-  currentUserId,
 }: {
   title: string;
   tone: "error" | "due" | "week";
@@ -726,7 +720,6 @@ function TaskGroup({
   canManageTasks: boolean;
   completingTaskId: string | null;
   memberProfiles: Record<string, MemberProfile>;
-  currentUserId: string | null;
 }) {
   const headingColor =
     tone === "error"
@@ -809,11 +802,10 @@ function TaskGroup({
             </h3>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {group.rows.map(({ task, room }) => {
-                const assigneeId = task.assigned_to ?? currentUserId ?? "";
+                const assigneeId =
+                  task.assigned_user_ids?.[0] || task.assigned_to || null;
                 const profile = assigneeId ? memberProfiles[assigneeId] : undefined;
-                const label =
-                  profile?.display_name?.trim() ||
-                  (assigneeId && assigneeId === currentUserId ? "You" : "Member");
+                const label = profile?.display_name?.trim() || "Unassigned";
                 const initials = initialsFromName(label);
 
                 return (
