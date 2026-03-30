@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,19 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Nadeef",
   description: "Home cleaning support tool powered by Supabase.",
+  applicationName: "Nadeef",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Nadeef",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   icons: {
     icon: [
       { url: "/nadeef-logo.png", type: "image/png" },
@@ -17,6 +30,13 @@ export const metadata: Metadata = {
     apple: [{ url: "/nadeef-logo.png" }],
     shortcut: ["/nadeef-logo.png"],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0f766e",
 };
 
 export default function RootLayout({
