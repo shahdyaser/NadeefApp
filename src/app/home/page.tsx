@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
 import BottomNav from "@/components/bottom-nav";
+import { getVapidPublicKey } from "@/lib/notifications/vapid";
 
 type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
@@ -44,117 +45,12 @@ type HomeCachePayload = {
 };
 const HOME_CACHE_KEY = "home";
 const DEFAULT_ROOM_TEMPLATE: RoomTemplateKey = "bedroom";
-type ReminderSlot = "morning" | "evening";
-const REMINDER_CONFIG: Record<
-  ReminderSlot,
-  { hour: number; title: string; body: (pendingCount: number) => string }
-> = {
-  morning: {
-    hour: 8,
-    title: "Good Morning from Nadeef ☀️",
-    body: (pendingCount) =>
-      `🌿 A fresh home starts with one small win. You have ${pendingCount} task${pendingCount === 1 ? "" : "s"} today — you got this!`,
-  },
-  evening: {
-    hour: 20,
-    title: "Nadeef Evening Boost 🌙",
-    body: (pendingCount) =>
-      `✨ You are close! Finish the remaining ${pendingCount} task${pendingCount === 1 ? "" : "s"} and end the day proud.`,
-  },
-};
 
 function toLocalDateKey(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
-}
-
-function getNextReminderTime(now: Date) {
-  const slots: Array<{ slot: ReminderSlot; at: Date }> = (Object.keys(
-    REMINDER_CONFIG,
-  ) as ReminderSlot[]).map((slot) => {
-    const at = new Date(now);
-    at.setHours(REMINDER_CONFIG[slot].hour, 0, 0, 0);
-    if (at <= now) {
-      at.setDate(at.getDate() + 1);
-    }
-    return { slot, at };
-  });
-  slots.sort((a, b) => a.at.getTime() - b.at.getTime());
-  const next = slots[0];
-  return next.at;
-}
-
-function hasSlotPassedToday(slot: ReminderSlot, now: Date) {
-  return now.getHours() >= REMINDER_CONFIG[slot].hour;
-}
-
-function getReminderStorageKey(houseId: string, slot: ReminderSlot) {
-  return `nadeef:reminder:${houseId}:${slot}`;
-}
-
-async function countPendingTasksToday(
-  supabaseClient: ReturnType<typeof getSupabaseBrowserClient>,
-  houseId: string,
-  todayIso: string,
-) {
-  const { count, error } = await supabaseClient
-    .from("task")
-    .select("id", { count: "exact", head: true })
-    .eq("house_id", houseId)
-    .eq("status", "active")
-    .not("next_due_date", "is", null)
-    .lte("next_due_date", todayIso);
-  if (error) return null;
-  return Number(count ?? 0);
-}
-
-function getSentToday(slot: ReminderSlot, houseId: string, todayKey: string) {
-  if (typeof window === "undefined") return false;
-  return (
-    window.localStorage.getItem(getReminderStorageKey(houseId, slot)) === todayKey
-  );
-}
-
-function markSentToday(slot: ReminderSlot, houseId: string, todayKey: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(getReminderStorageKey(houseId, slot), todayKey);
-}
-
-async function sendReminderForSlot({
-  slot,
-  houseId,
-  todayKey,
-  pendingCount,
-  registration,
-}: {
-  slot: ReminderSlot;
-  houseId: string;
-  todayKey: string;
-  pendingCount: number;
-  registration: ServiceWorkerRegistration;
-}) {
-  const slotConfig = REMINDER_CONFIG[slot];
-  await registration.showNotification(slotConfig.title, {
-    body: slotConfig.body(pendingCount),
-    icon: "/nadeef-logo.png",
-    badge: "/nadeef-logo.png",
-    tag: `nadeef-${slot}-${todayKey}`,
-    data: { url: "/tasks/due-today?window=today" },
-  });
-  markSentToday(slot, houseId, todayKey);
-}
-
-function getDueReminderSlots(now: Date, houseId: string, todayKey: string) {
-  return (Object.keys(REMINDER_CONFIG) as ReminderSlot[]).filter(
-    (slot) => hasSlotPassedToday(slot, now) && !getSentToday(slot, houseId, todayKey),
-  );
-}
-
-function toNextReminderDelayMs(now: Date) {
-  const next = getNextReminderTime(now);
-  return Math.max(1000, next.getTime() - Date.now());
 }
 
 function isNotificationSupported() {
@@ -169,60 +65,11 @@ function shouldRequestNotificationPermission() {
   return isNotificationSupported() && Notification.permission === "default";
 }
 
-function canSendNotificationsNow() {
-  return isNotificationSupported() && Notification.permission === "granted";
-}
-
-function shouldSkipNotificationSetup({
-  supabaseClient,
-  house,
-  notificationsEnabled,
-}: {
-  supabaseClient: ReturnType<typeof getSupabaseBrowserClient> | null;
-  house: HouseRow | null;
-  notificationsEnabled: boolean;
-}) {
-  return !supabaseClient || !house || !notificationsEnabled || !isNotificationSupported();
-}
-
-function getTodayKey() {
-  return toLocalDateKey(new Date());
-}
-
-function getTodayIso() {
-  return toLocalDateKey(new Date());
-}
-
-async function trySendDueReminders({
-  supabaseClient,
-  registration,
-  houseId,
-}: {
-  supabaseClient: ReturnType<typeof getSupabaseBrowserClient>;
-  registration: ServiceWorkerRegistration;
-  houseId: string;
-}) {
-  const now = new Date();
-  const todayKey = getTodayKey();
-  const dueSlots = getDueReminderSlots(now, houseId, todayKey);
-  if (!dueSlots.length) return;
-
-  const pendingCount = await countPendingTasksToday(
-    supabaseClient,
-    houseId,
-    getTodayIso(),
-  );
-  if (pendingCount === null || pendingCount <= 0) return;
-
-  for (const slot of dueSlots) {
-    await sendReminderForSlot({
-      slot,
-      houseId,
-      todayKey,
-      pendingCount,
-      registration,
-    });
-  }
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
 const ROOM_MODAL_OPTIONS: Array<{
@@ -479,56 +326,82 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (
-      shouldSkipNotificationSetup({
-        supabaseClient,
-        house,
-        notificationsEnabled,
-      })
-    ) {
+    const notificationClient = supabaseClient;
+    const notificationHouse = house;
+    if (!notificationClient || !notificationHouse || !isNotificationSupported()) {
       return;
     }
 
-    let timerId: number | null = null;
     let cancelled = false;
 
-    async function registerAndSchedule() {
+    async function syncPushSubscription() {
+      const client = notificationClient;
+      if (!client) return;
       try {
         await navigator.serviceWorker.register("/sw.js");
         const registration = await navigator.serviceWorker.ready;
-        if (!registration || cancelled) return;
+        if (!registration || cancelled) {
+          return;
+        }
+
+        const { data: sessionData } = await client.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (!accessToken) {
+          return;
+        }
+
+        const existingSubscription = await registration.pushManager.getSubscription();
+        if (!notificationsEnabled) {
+          if (existingSubscription) {
+            await fetch("/api/notifications/subscribe", {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ endpoint: existingSubscription.endpoint }),
+            });
+            await existingSubscription.unsubscribe();
+          }
+          return;
+        }
 
         if (shouldRequestNotificationPermission()) {
           await Notification.requestPermission();
         }
-        if (!canSendNotificationsNow() || cancelled) return;
+        if (Notification.permission !== "granted" || cancelled) {
+          return;
+        }
 
-        const scheduleNext = async () => {
-          if (cancelled) return;
-          await trySendDueReminders({
-            supabaseClient,
-            registration,
-            houseId: house.id,
-          });
-          const delay = toNextReminderDelayMs(new Date());
-          timerId = window.setTimeout(() => {
-            void scheduleNext();
-          }, delay);
-        };
+        const vapidPublicKey = getVapidPublicKey();
+        if (!vapidPublicKey) {
+          return;
+        }
 
-        await scheduleNext();
+        const subscription =
+          existingSubscription ??
+          (await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          }));
+
+        await fetch("/api/notifications/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ subscription }),
+        });
       } catch {
-        // Ignore notification setup issues on unsupported platforms.
+        // Keep app resilient on browsers that block push APIs.
       }
     }
 
-    void registerAndSchedule();
+    void syncPushSubscription();
 
     return () => {
       cancelled = true;
-      if (timerId !== null) {
-        window.clearTimeout(timerId);
-      }
     };
   }, [house, notificationsEnabled, supabaseClient]);
 

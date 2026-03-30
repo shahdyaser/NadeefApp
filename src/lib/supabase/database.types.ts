@@ -231,6 +231,75 @@ export type Database = {
         };
         Relationships: [];
       };
+      push_subscription: {
+        Row: {
+          id: string;
+          user_id: string;
+          house_id: string;
+          endpoint: string;
+          p256dh: string | null;
+          auth: string | null;
+          subscription: Json;
+          user_agent: string | null;
+          created_at: string;
+          updated_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          house_id: string;
+          endpoint: string;
+          p256dh?: string | null;
+          auth?: string | null;
+          subscription: Json;
+          user_agent?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_seen_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          house_id?: string;
+          endpoint?: string;
+          p256dh?: string | null;
+          auth?: string | null;
+          subscription?: Json;
+          user_agent?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_seen_at?: string;
+        };
+        Relationships: [];
+      };
+      push_reminder_log: {
+        Row: {
+          id: string;
+          user_id: string;
+          house_id: string;
+          slot: string;
+          local_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          house_id: string;
+          slot: string;
+          local_date: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          house_id?: string;
+          slot?: string;
+          local_date?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

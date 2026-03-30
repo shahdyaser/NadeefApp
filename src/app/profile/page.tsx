@@ -29,6 +29,7 @@ type ProfileCachePayload = {
   houseName: string;
   members: ProfileMember[];
 };
+type PreviewSlot = "test" | "morning" | "evening";
 const PROFILE_CACHE_KEY = "profile";
 
 const APP_SIGNUP_URL = process.env.NEXT_PUBLIC_APP_SIGNUP_URL || "http://localhost:3000";
@@ -55,6 +56,7 @@ export default function ProfilePage() {
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [sendingPushSlot, setSendingPushSlot] = useState<PreviewSlot | null>(null);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -416,6 +418,48 @@ After signing up, enter this house code to join: ${inviteCode}`;
     router.replace("/");
   }
 
+  async function handleSendTestPush(slot: PreviewSlot) {
+    if (!supabaseClient) return;
+    setError(null);
+    setMessage(null);
+    setSendingPushSlot(slot);
+
+    const { data: sessionData } = await supabaseClient.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setSendingPushSlot(null);
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/notifications/test?slot=${slot}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        sent?: number;
+      };
+      if (!response.ok) {
+        setError(payload.error ?? "Could not send test push.");
+      } else {
+        const label =
+          slot === "morning" ? "morning preview" : slot === "evening" ? "evening preview" : "test push";
+        setMessage(
+          `${label} sent successfully${payload.sent ? ` (${payload.sent})` : ""}.`,
+        );
+      }
+    } catch {
+      setError("Could not send test push.");
+    } finally {
+      setSendingPushSlot(null);
+    }
+  }
+
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-6">
@@ -563,6 +607,33 @@ After signing up, enter this house code to join: ${inviteCode}`;
             >
               {savingProfile ? "Saving..." : "Save Settings"}
             </button>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => void handleSendTestPush("morning")}
+                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
+                className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
+              >
+                {sendingPushSlot === "morning" ? "Sending..." : "Send Morning Preview"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendTestPush("evening")}
+                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
+                className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
+              >
+                {sendingPushSlot === "evening" ? "Sending..." : "Send Evening Preview"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendTestPush("test")}
+                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
+                className="rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
+              >
+                {sendingPushSlot === "test" ? "Sending..." : "Send Test Push"}
+              </button>
+            </div>
           </div>
         </section>
 

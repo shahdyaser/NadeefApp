@@ -222,6 +222,30 @@ create table if not exists public.task_library (
   unique (room_template, name)
 );
 
+create table if not exists public.push_subscription (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  house_id uuid not null references public.house(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text,
+  auth text,
+  subscription jsonb not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
+create table if not exists public.push_reminder_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  house_id uuid not null references public.house(id) on delete cascade,
+  slot text not null check (slot in ('morning', 'evening')),
+  local_date date not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, house_id, slot, local_date)
+);
+
 -- ===== Triggers =====
 drop trigger if exists set_house_updated_at on public.house;
 create trigger set_house_updated_at
@@ -529,6 +553,10 @@ create index if not exists task_history_task_idx on public.task_history(task_id)
 create index if not exists task_history_user_idx on public.task_history(user_id);
 create index if not exists task_history_completed_at_idx on public.task_history(completed_at desc);
 create index if not exists task_library_room_template_idx on public.task_library(room_template);
+create index if not exists push_subscription_house_idx on public.push_subscription(house_id);
+create index if not exists push_subscription_user_idx on public.push_subscription(user_id);
+create index if not exists push_reminder_log_house_slot_date_idx
+  on public.push_reminder_log(house_id, slot, local_date);
 
 -- ===== RLS =====
 alter table public.house enable row level security;
@@ -537,6 +565,8 @@ alter table public.room enable row level security;
 alter table public.task enable row level security;
 alter table public.task_history enable row level security;
 alter table public.task_library enable row level security;
+alter table public.push_subscription enable row level security;
+alter table public.push_reminder_log enable row level security;
 
 create or replace function public.is_house_member(p_house_id uuid)
 returns boolean
@@ -802,6 +832,57 @@ create policy task_library_select_policy
 on public.task_library
 for select
 using (auth.uid() is not null);
+
+-- push_subscription policies
+drop policy if exists push_subscription_select_policy on public.push_subscription;
+create policy push_subscription_select_policy
+on public.push_subscription
+for select
+using (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
+
+drop policy if exists push_subscription_insert_policy on public.push_subscription;
+create policy push_subscription_insert_policy
+on public.push_subscription
+for insert
+with check (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
+
+drop policy if exists push_subscription_update_policy on public.push_subscription;
+create policy push_subscription_update_policy
+on public.push_subscription
+for update
+using (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+)
+with check (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
+
+drop policy if exists push_subscription_delete_policy on public.push_subscription;
+create policy push_subscription_delete_policy
+on public.push_subscription
+for delete
+using (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
+
+-- push_reminder_log policies
+drop policy if exists push_reminder_log_select_policy on public.push_reminder_log;
+create policy push_reminder_log_select_policy
+on public.push_reminder_log
+for select
+using (
+  user_id = auth.uid()
+  and public.is_house_member(house_id)
+);
 
 -- ===== Storage: profile pictures =====
 insert into storage.buckets (id, name, public)
