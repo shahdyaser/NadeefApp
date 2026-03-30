@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -26,6 +26,36 @@ export default function Home() {
   }, []);
 
   const isConfigured = !!supabaseClient;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function redirectIfSignedIn() {
+      if (!supabaseClient) return;
+      const { data, error: sessionError } = await supabaseClient.auth.getSession();
+      if (cancelled || sessionError) return;
+      if (data.session) {
+        router.replace("/setup");
+      }
+    }
+
+    void redirectIfSignedIn();
+    const {
+      data: { subscription },
+    } = supabaseClient
+      ? supabaseClient.auth.onAuthStateChange((event, session) => {
+          if (cancelled) return;
+          if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session) {
+            router.replace("/setup");
+          }
+        })
+      : { data: { subscription: { unsubscribe: () => undefined } } };
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [router, supabaseClient]);
 
   async function handleEmailAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -13,7 +13,14 @@ export function getSupabaseBrowserClient() {
   }
 
   if (!browserClient) {
-    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey);
+    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: "nadeef-auth",
+      },
+    });
   }
 
   return browserClient;
