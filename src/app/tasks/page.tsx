@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
 import BottomNav from "@/components/bottom-nav";
+import TaskEditorModal, {
+  type TaskEditorMemberOption,
+  type TaskEditorValues,
+} from "@/components/task-editor-modal";
 
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Database["public"]["Tables"]["task"]["Row"];
@@ -111,7 +115,9 @@ type MemberProfile = {
 type TasksCachePayload = {
   userId: string | null;
   canManageTasks: boolean;
+  rooms: RoomRow[];
   tasksWithRoom: TaskWithRoom[];
+  members: TaskEditorMemberOption[];
   memberProfiles: Record<string, MemberProfile>;
   freshness: number;
   doneToday: number;
@@ -120,6 +126,7 @@ type TasksCachePayload = {
 };
 const TASKS_CACHE_KEY = "tasks";
 const SWIPE_ACTION_WIDTH = 204;
+type DueDateFilter = "all" | "overdue" | "today" | "week" | "month" | "later";
 
 function initialsFromName(name: string) {
   return (
@@ -152,7 +159,9 @@ export default function TasksPage() {
   const [canManageTasks, setCanManageTasks] = useState(cachedTasks?.canManageTasks ?? false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [rooms, setRooms] = useState<RoomRow[]>(cachedTasks?.rooms ?? []);
   const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>(cachedTasks?.tasksWithRoom ?? []);
+  const [members, setMembers] = useState<TaskEditorMemberOption[]>(cachedTasks?.members ?? []);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>(
     cachedTasks?.memberProfiles ?? {},
   );
@@ -161,10 +170,10 @@ export default function TasksPage() {
   const [dueToday, setDueToday] = useState(cachedTasks?.dueToday ?? 0);
   const [overdue, setOverdue] = useState(cachedTasks?.overdue ?? 0);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
-  const [editTaskName, setEditTaskName] = useState("");
-  const [editTaskDueDate, setEditTaskDueDate] = useState("");
-  const [editTaskFrequencyDays, setEditTaskFrequencyDays] = useState(3);
-  const [editTaskEffortPoints, setEditTaskEffortPoints] = useState(10);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState("all");
+  const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState("all");
+  const [selectedDueDateFilter, setSelectedDueDateFilter] = useState<DueDateFilter>("all");
 
   const loadTasks = useCallback(async () => {
       if (!supabaseClient) {
@@ -240,6 +249,15 @@ export default function TasksPage() {
         task,
         room: roomsById.get(task.room_id),
       }));
+      const memberOptions: TaskEditorMemberOption[] = (memberData ?? []).map((member) => {
+        const label = member.display_name?.trim() || "Member";
+        return {
+          userId: member.user_id,
+          label,
+          initials: initialsFromName(label),
+          avatarUrl: member.avatar_url,
+        };
+      });
 
       const today = new Date().toISOString().slice(0, 10);
       const active = rows.filter((row) => row.task.status === "active");
@@ -268,7 +286,9 @@ export default function TasksPage() {
             )
           : 0;
 
+      setRooms((roomData ?? []) as RoomRow[]);
       setTasksWithRoom(rows);
+      setMembers(memberOptions);
       setMemberProfiles(
         Object.fromEntries((memberData ?? []).map((m) => [m.user_id, m])) as Record<
           string,
@@ -282,7 +302,9 @@ export default function TasksPage() {
       setViewCache<TasksCachePayload>(TASKS_CACHE_KEY, {
         userId: uid,
         canManageTasks: role === "owner" || role === "member",
+        rooms: (roomData ?? []) as RoomRow[],
         tasksWithRoom: rows,
+        members: memberOptions,
         memberProfiles: Object.fromEntries((memberData ?? []).map((m) => [m.user_id, m])) as Record<
           string,
           MemberProfile
@@ -365,24 +387,23 @@ export default function TasksPage() {
   function openEditTaskModal(task: TaskRow) {
     if (!canManageTasks) return;
     setEditingTask(task);
-    setEditTaskName(task.name);
-    setEditTaskDueDate(task.next_due_date ?? new Date().toISOString().slice(0, 10));
-    setEditTaskFrequencyDays(Math.max(1, task.frequency_days));
-    setEditTaskEffortPoints(Math.max(10, Math.min(30, task.effort_points)));
   }
 
-  async function handleSaveTaskEdit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveTaskEdit(values: TaskEditorValues) {
     if (!supabaseClient || !editingTask || !canManageTasks) return;
     setError(null);
     setSavingTaskEdit(true);
     const { error: updateError } = await supabaseClient
       .from("task")
       .update({
-        name: editTaskName.trim(),
-        next_due_date: editTaskDueDate,
-        frequency_days: Math.max(1, editTaskFrequencyDays),
-        effort_points: Math.max(10, Math.min(30, Math.round(editTaskEffortPoints / 10) * 10)),
+        name: values.name,
+        room_id: values.roomId,
+        next_due_date: values.nextDueDate,
+        frequency_days: Math.max(1, values.frequencyDays),
+        effort_points: values.effortPoints,
+        assigned_to: values.assignedUserIds[0] ?? null,
+        assigned_user_ids: values.assignedUserIds,
+        assignment_mode: values.assignmentMode,
       })
       .eq("id", editingTask.id);
     setSavingTaskEdit(false);
@@ -413,7 +434,20 @@ export default function TasksPage() {
   }
 
   const todayDate = new Date();
-  const overdueTasks = tasksWithRoom.filter(
+  const filteredTasksWithRoom = tasksWithRoom.filter((row) => {
+    const roomMatches = selectedRoomFilter === "all" || row.task.room_id === selectedRoomFilter;
+    const assigneeMatches =
+      selectedAssigneeFilter === "all"
+        ? true
+        : selectedAssigneeFilter === "me"
+          ? (!!userId &&
+              (row.task.assigned_to === userId ||
+                row.task.assigned_user_ids?.includes(userId) === true))
+          : row.task.assigned_to === selectedAssigneeFilter ||
+            row.task.assigned_user_ids?.includes(selectedAssigneeFilter) === true;
+    return roomMatches && assigneeMatches;
+  });
+  const overdueTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
@@ -421,7 +455,7 @@ export default function TasksPage() {
         return diff !== null && diff < 0;
       })(),
   );
-  const dueTodayTasks = tasksWithRoom.filter(
+  const dueTodayTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
@@ -429,7 +463,7 @@ export default function TasksPage() {
         return diff === 0;
       })(),
   );
-  const thisWeekTasks = tasksWithRoom.filter(
+  const thisWeekTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
@@ -437,7 +471,7 @@ export default function TasksPage() {
         return diff !== null && diff >= 1 && diff <= 7;
       })(),
   );
-  const thisMonthTasks = tasksWithRoom.filter(
+  const thisMonthTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
@@ -445,7 +479,7 @@ export default function TasksPage() {
         return diff !== null && diff >= 8 && diff <= 30;
       })(),
   );
-  const laterTasks = tasksWithRoom.filter(
+  const laterTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
@@ -457,6 +491,68 @@ export default function TasksPage() {
   const currentInitials = initialsFromName(
     currentProfile?.display_name?.trim() || "You",
   );
+  const taskSections: Array<{
+    key: Exclude<DueDateFilter, "all">;
+    title: string;
+    tone: "error" | "due" | "week";
+    items: TaskWithRoom[];
+    fallback: string;
+  }> = [
+    {
+      key: "overdue",
+      title: "Overdue",
+      tone: "error",
+      items: overdueTasks,
+      fallback: "No overdue tasks.",
+    },
+    {
+      key: "today",
+      title: "Due Today",
+      tone: "due",
+      items: dueTodayTasks,
+      fallback: "No tasks due today.",
+    },
+    {
+      key: "week",
+      title: "This Week",
+      tone: "week",
+      items: thisWeekTasks,
+      fallback: "No upcoming tasks.",
+    },
+    {
+      key: "month",
+      title: "This Month",
+      tone: "week",
+      items: thisMonthTasks,
+      fallback: "No tasks later this month.",
+    },
+    {
+      key: "later",
+      title: "Later",
+      tone: "week",
+      items: laterTasks,
+      fallback: "No later tasks.",
+    },
+  ];
+  const hasActiveFilters =
+    selectedRoomFilter !== "all" ||
+    selectedAssigneeFilter !== "all" ||
+    selectedDueDateFilter !== "all";
+  const visibleSections =
+    selectedDueDateFilter === "all"
+      ? taskSections
+      : selectedDueDateFilter === "week"
+        ? taskSections.filter((section) =>
+            ["overdue", "today", "week"].includes(section.key),
+          )
+        : selectedDueDateFilter === "month"
+          ? taskSections.filter((section) =>
+              ["overdue", "today", "week", "month"].includes(section.key),
+            )
+          : taskSections.filter((section) => section.key === selectedDueDateFilter);
+  const sectionsToRender = hasActiveFilters
+    ? visibleSections.filter((section) => section.items.length > 0)
+    : visibleSections;
 
   return (
     <main className="min-h-screen bg-[#f7f9fb] font-sans text-[#191c1e]">
@@ -466,25 +562,53 @@ export default function TasksPage() {
             <span className="text-teal-600">☰</span>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900">All Tasks</h1>
           </div>
-          <div
-            className="h-8 w-8 rounded-full border border-slate-300 bg-slate-100"
-            style={
-              currentProfile?.avatar_url
-                ? {
-                    backgroundImage: `url("${currentProfile.avatar_url}")`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }
-                : undefined
-            }
-            aria-label="Current user avatar"
-            title={currentProfile?.display_name?.trim() || "You"}
-          >
-            {!currentProfile?.avatar_url ? (
-              <span className="flex h-full w-full items-center justify-center text-[9px] font-bold text-slate-600">
-                {currentInitials}
-              </span>
-            ) : null}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowFilters((prev) => !prev)}
+              className={`relative flex h-8 w-8 items-center justify-center rounded-full border text-sm transition-colors ${
+                showFilters || hasActiveFilters
+                  ? "border-teal-200 bg-teal-50 text-teal-700"
+                  : "border-slate-300 bg-white text-slate-500"
+              }`}
+              aria-label="Toggle task filters"
+              title="Filters"
+            >
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
+                <path
+                  d="M3 5h14M5 10h10M8 15h4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <circle cx="7" cy="5" r="1.6" fill="currentColor" />
+                <circle cx="12.5" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="10" cy="15" r="1.6" fill="currentColor" />
+              </svg>
+              {hasActiveFilters ? (
+                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-orange-500" />
+              ) : null}
+            </button>
+            <div
+              className="h-8 w-8 rounded-full border border-slate-300 bg-slate-100"
+              style={
+                currentProfile?.avatar_url
+                  ? {
+                      backgroundImage: `url("${currentProfile.avatar_url}")`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }
+                  : undefined
+              }
+              aria-label="Current user avatar"
+              title={currentProfile?.display_name?.trim() || "You"}
+            >
+              {!currentProfile?.avatar_url ? (
+                <span className="flex h-full w-full items-center justify-center text-[9px] font-bold text-slate-600">
+                  {currentInitials}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
@@ -542,154 +666,122 @@ export default function TasksPage() {
           </div>
         </section>
 
+        {showFilters ? (
+          <section className="mb-6 rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                Filter Tasks
+              </p>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRoomFilter("all");
+                    setSelectedAssigneeFilter("all");
+                    setSelectedDueDateFilter("all");
+                  }}
+                  className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="space-y-1">
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Room
+                </span>
+                <select
+                  value={selectedRoomFilter}
+                  onChange={(event) => setSelectedRoomFilter(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-teal-400"
+                >
+                  <option value="all">All rooms</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Due Date
+                </span>
+                <select
+                  value={selectedDueDateFilter}
+                  onChange={(event) => setSelectedDueDateFilter(event.target.value as DueDateFilter)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-teal-400"
+                >
+                  <option value="all">All due dates</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="today">Due today</option>
+                  <option value="week">This week</option>
+                  <option value="month">This month</option>
+                  <option value="later">Later</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Assignee
+                </span>
+                <select
+                  value={selectedAssigneeFilter}
+                  onChange={(event) => setSelectedAssigneeFilter(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-teal-400"
+                >
+                  <option value="all">All assignees</option>
+                  <option value="me">Assigned to me</option>
+                  {members.map((member) => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+        ) : null}
+
         <div className="space-y-6">
-          <TaskGroup
-            title="Overdue"
-            tone="error"
-            items={overdueTasks}
-            fallback="No overdue tasks."
-            completingTaskId={completingTaskId}
-            onConfirmTask={handleNadeefTask}
-            onEditTask={openEditTaskModal}
-            onSkipTask={handleSkipTask}
-            onDeleteTask={handleDeleteTask}
-            canManageTasks={canManageTasks}
-            memberProfiles={memberProfiles}
-          />
-          <TaskGroup
-            title="Due Today"
-            tone="due"
-            items={dueTodayTasks}
-            fallback="No tasks due today."
-            completingTaskId={completingTaskId}
-            onConfirmTask={handleNadeefTask}
-            onEditTask={openEditTaskModal}
-            onSkipTask={handleSkipTask}
-            onDeleteTask={handleDeleteTask}
-            canManageTasks={canManageTasks}
-            memberProfiles={memberProfiles}
-          />
-          <TaskGroup
-            title="This Week"
-            tone="week"
-            items={thisWeekTasks}
-            fallback="No upcoming tasks."
-            completingTaskId={completingTaskId}
-            onConfirmTask={handleNadeefTask}
-            onEditTask={openEditTaskModal}
-            onSkipTask={handleSkipTask}
-            onDeleteTask={handleDeleteTask}
-            canManageTasks={canManageTasks}
-            memberProfiles={memberProfiles}
-          />
-          <TaskGroup
-            title="This Month"
-            tone="week"
-            items={thisMonthTasks}
-            fallback="No tasks later this month."
-            completingTaskId={completingTaskId}
-            onConfirmTask={handleNadeefTask}
-            onEditTask={openEditTaskModal}
-            onSkipTask={handleSkipTask}
-            onDeleteTask={handleDeleteTask}
-            canManageTasks={canManageTasks}
-            memberProfiles={memberProfiles}
-          />
-          <TaskGroup
-            title="Later"
-            tone="week"
-            items={laterTasks}
-            fallback="No later tasks."
-            completingTaskId={completingTaskId}
-            onConfirmTask={handleNadeefTask}
-            onEditTask={openEditTaskModal}
-            onSkipTask={handleSkipTask}
-            onDeleteTask={handleDeleteTask}
-            canManageTasks={canManageTasks}
-            memberProfiles={memberProfiles}
-          />
+          {sectionsToRender.length ? (
+            sectionsToRender.map((section) => (
+              <TaskGroup
+                key={section.key}
+                title={section.title}
+                tone={section.tone}
+                items={section.items}
+                fallback={section.fallback}
+                completingTaskId={completingTaskId}
+                onConfirmTask={handleNadeefTask}
+                onEditTask={openEditTaskModal}
+                onSkipTask={handleSkipTask}
+                onDeleteTask={handleDeleteTask}
+                canManageTasks={canManageTasks}
+                memberProfiles={memberProfiles}
+              />
+            ))
+          ) : (
+            <p className="rounded-xl bg-white p-4 text-sm text-slate-500 shadow-sm">
+              No tasks match the current filters.
+            </p>
+          )}
         </div>
       </section>
 
-      {editingTask ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={handleSaveTaskEdit}
-            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.2)]"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Edit Task</h3>
-              <button
-                type="button"
-                onClick={() => setEditingTask(null)}
-                className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100"
-              >
-                ✕
-              </button>
-            </div>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Task Name
-              </span>
-              <input
-                required
-                value={editTaskName}
-                onChange={(event) => setEditTaskName(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-                placeholder="Task name"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Due Date
-              </span>
-              <input
-                required
-                type="date"
-                value={editTaskDueDate}
-                onChange={(event) => setEditTaskDueDate(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Frequency (days)
-              </span>
-              <input
-                required
-                type="number"
-                min={1}
-                value={editTaskFrequencyDays}
-                onChange={(event) =>
-                  setEditTaskFrequencyDays(Math.max(1, Number(event.target.value) || 1))
-                }
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Effort Points (10/20/30)
-              </span>
-              <select
-                value={editTaskEffortPoints}
-                onChange={(event) => setEditTaskEffortPoints(Number(event.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-400"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={30}>30</option>
-              </select>
-            </label>
-            <button
-              type="submit"
-              disabled={savingTaskEdit}
-              className="w-full rounded-xl bg-teal-700 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-            >
-              {savingTaskEdit ? "Saving..." : "Save Task"}
-            </button>
-          </form>
-        </div>
-      ) : null}
+      <TaskEditorModal
+        key={editingTask?.id ?? "closed"}
+        open={!!editingTask}
+        title="Edit Sanctuary Task"
+        task={editingTask}
+        rooms={rooms}
+        members={members}
+        saving={savingTaskEdit}
+        onClose={() => setEditingTask(null)}
+        onSave={handleSaveTaskEdit}
+      />
 
       <BottomNav />
     </main>
@@ -869,7 +961,7 @@ function TaskGroup({
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
-                          {room ? ROOM_ICON[room.type] : "📌"}
+                          {room ? room.icon_ref || ROOM_ICON[room.type] : "📌"}
                         </div>
                         <div className="min-w-0">
                           <Link

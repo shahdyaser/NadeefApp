@@ -212,7 +212,7 @@ export default function LeaderboardPage() {
           </button>
         </div>
         <p className="text-center text-xs text-slate-500">
-          Smart score = effort points + completed tasks + home freshness + streak.
+          Smart score weights: effort 20%, completed tasks 20%, home freshness 30%, streak 30%.
         </p>
 
         <section className="grid grid-cols-3 items-end gap-4 pb-2 pt-4">

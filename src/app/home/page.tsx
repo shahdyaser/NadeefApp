@@ -13,7 +13,14 @@ type HouseRow = Database["public"]["Tables"]["house"]["Row"];
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Pick<
   Database["public"]["Tables"]["task"]["Row"],
-  "id" | "name" | "room_id" | "status" | "next_due_date" | "effort_points"
+  | "id"
+  | "name"
+  | "room_id"
+  | "status"
+  | "next_due_date"
+  | "effort_points"
+  | "assigned_to"
+  | "assigned_user_ids"
 >;
 type RoomType = Database["public"]["Enums"]["room_type"];
 type RoomTaskSetupMode = "auto_library" | "empty_room";
@@ -38,7 +45,7 @@ type HomeCachePayload = {
   house: HouseRow | null;
   rooms: RoomRow[];
   tasks: TaskRow[];
-  totalPoints: number;
+  pointsToday: number;
   streakDays: number;
   canManageHome: boolean;
   notificationsEnabled: boolean;
@@ -143,22 +150,62 @@ function getRoomFreshnessTone(freshness: number) {
 function getFreshnessMessage(freshness: number) {
   if (freshness === 100) {
     return {
-      text: "Amazing job. Your home is shining today.",
+      text: "Perfectly Nadeef. Every active task is under control today.",
+      percentageClass: "text-green-700",
+      progressClass: "bg-green-500",
+    };
+  }
+
+  if (freshness >= 90) {
+    return {
+      text: "Excellent work. Your home is nearly perfectly Nadeef.",
       percentageClass: "text-teal-700",
       progressClass: "bg-teal-500",
     };
   }
 
-  if (freshness >= 50) {
+  if (freshness >= 80) {
     return {
-      text: "Great progress. A few tasks and you are back on track.",
-      percentageClass: "text-amber-700",
-      progressClass: "bg-amber-500",
+      text: "Almost there. Just a few tasks stand between good and great.",
+      percentageClass: "text-yellow-700",
+      progressClass: "bg-yellow-400",
+    };
+  }
+
+  if (freshness >= 70) {
+    return {
+      text: "Looking good. You are close to a beautifully fresh space.",
+      percentageClass: "text-yellow-700",
+      progressClass: "bg-yellow-400",
+    };
+  }
+
+  if (freshness >= 55) {
+    return {
+      text: "Nice progress. Your home is already feeling more Nadeef.",
+      percentageClass: "text-orange-700",
+      progressClass: "bg-orange-500",
+    };
+  }
+
+  if (freshness >= 40) {
+    return {
+      text: "Momentum is building. Keep going and the home will feel lighter soon.",
+      percentageClass: "text-orange-700",
+      progressClass: "bg-orange-500",
+    };
+  }
+
+  if (freshness >= 25) {
+    return {
+      text: "You are getting back on track. A few tasks will make a big difference.",
+      percentageClass: "text-red-700",
+      progressClass: "bg-red-500",
     };
   }
 
   return {
-    text: "You got this. Start with one room and build momentum.",
+    text: "Fresh start. One small reset can change the whole home today.",
     percentageClass: "text-red-700",
     progressClass: "bg-red-500",
   };
@@ -184,6 +231,13 @@ function getFreshnessFromTasks(tasks: TaskRow[], today: string) {
   );
 }
 
+function isTaskAssignedToUser(task: TaskRow, userId: string) {
+  return (
+    task.assigned_to === userId ||
+    (task.assigned_user_ids?.length ? task.assigned_user_ids.includes(userId) : false)
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const supabaseClient = useMemo(() => {
@@ -204,10 +258,11 @@ export default function HomePage() {
   const [house, setHouse] = useState<HouseRow | null>(null);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
-  const [totalPoints, setTotalPoints] = useState(0);
+  const [pointsToday, setPointsToday] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
   const [canManageHome, setCanManageHome] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
@@ -240,6 +295,7 @@ export default function HomePage() {
     }
 
     const uid = sessionData.session.user.id;
+    setCurrentUserId(uid);
     const { data: memberships, error: membershipError } = await supabaseClient
       .from("user_house_bridge")
       .select("house_id,total_points,current_streak_days,role,notifications_enabled")
@@ -282,7 +338,7 @@ export default function HomePage() {
 
     const { data: taskData, error: taskError } = await supabaseClient
       .from("task")
-      .select("id,name,room_id,status,next_due_date,effort_points")
+      .select("id,name,room_id,status,next_due_date,effort_points,assigned_to,assigned_user_ids")
       .eq("house_id", member.house_id);
     if (taskError) {
       setError(taskError.message);
@@ -293,7 +349,27 @@ export default function HomePage() {
     setHouse(houseData);
     setRooms(roomData ?? []);
     setTasks((taskData ?? []) as TaskRow[]);
-    setTotalPoints(member.total_points ?? 0);
+    const todayRange = (() => {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const startIso = now.toISOString();
+      const end = new Date(now);
+      end.setDate(end.getDate() + 1);
+      const endIso = end.toISOString();
+      return { startIso, endIso };
+    })();
+    const { data: todayHistory } = await supabaseClient
+      .from("task_history")
+      .select("points_awarded")
+      .eq("user_id", uid)
+      .gte("completed_at", todayRange.startIso)
+      .lt("completed_at", todayRange.endIso)
+      .gt("points_awarded", 0);
+    const todayPoints = (todayHistory ?? []).reduce(
+      (acc, row) => acc + Number(row.points_awarded ?? 0),
+      0,
+    );
+    setPointsToday(todayPoints);
     setCanManageHome(member.role === "owner" || member.role === "member");
     setNotificationsEnabled(member.notifications_enabled ?? true);
     setStreakDays(member.current_streak_days ?? 0);
@@ -301,7 +377,7 @@ export default function HomePage() {
       house: houseData,
       rooms: roomData ?? [],
       tasks: (taskData ?? []) as TaskRow[],
-      totalPoints: member.total_points ?? 0,
+      pointsToday: todayPoints,
       streakDays: member.current_streak_days ?? 0,
       canManageHome: member.role === "owner" || member.role === "member",
       notificationsEnabled: member.notifications_enabled ?? true,
@@ -315,7 +391,7 @@ export default function HomePage() {
       setHouse(cached.house);
       setRooms(cached.rooms);
       setTasks(cached.tasks);
-      setTotalPoints(cached.totalPoints);
+      setPointsToday(cached.pointsToday ?? 0);
       setStreakDays(cached.streakDays);
       setCanManageHome(cached.canManageHome);
       setNotificationsEnabled(cached.notificationsEnabled ?? true);
@@ -656,6 +732,16 @@ export default function HomePage() {
     return task.next_due_date <= today;
   });
   const dueCardCount = scopedActiveTasks.length;
+  const displayStreakDays =
+    currentUserId &&
+    activeTasks.some(
+      (task) =>
+        !!task.next_due_date &&
+        task.next_due_date < today &&
+        isTaskAssignedToUser(task, currentUserId),
+    )
+      ? 1
+      : streakDays;
 
   const roomFreshnessValues = rooms.map((room) =>
     getFreshnessFromTasks(
@@ -761,15 +847,15 @@ export default function HomePage() {
               <p className="text-xl font-black">{dueCardCount}</p>
             </Link>
             <Link
-              href="/tasks/completed"
+              href="/tasks/completed?window=today"
               className="rounded-2xl bg-white p-3 text-center shadow-[0_10px_20px_rgba(0,0,0,0.02)] transition hover:bg-amber-50"
             >
               <p className="text-[10px] font-bold text-amber-700">POINTS</p>
-              <p className="text-xl font-black">{totalPoints}</p>
+              <p className="text-xl font-black">{pointsToday}</p>
             </Link>
             <div className="rounded-2xl bg-white p-3 text-center shadow-[0_10px_20px_rgba(0,0,0,0.02)]">
               <p className="text-[10px] font-bold text-teal-700">STREAK</p>
-              <p className="text-xl font-black">{streakDays}</p>
+              <p className="text-xl font-black">{displayStreakDays}</p>
             </div>
           </div>
         </section>
@@ -846,7 +932,7 @@ export default function HomePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#191c1e]/20 p-4 backdrop-blur-sm">
           <form
             onSubmit={handleSaveRoom}
-            className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-[0_20px_40px_-12px_rgba(25,28,30,0.12)]"
+            className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden overflow-x-hidden rounded-3xl bg-white shadow-[0_20px_40px_-12px_rgba(25,28,30,0.12)]"
           >
             <div className="flex items-center justify-between px-5 pb-4 pt-6 sm:px-8 sm:pt-8">
               <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
@@ -864,7 +950,7 @@ export default function HomePage() {
               </button>
             </div>
 
-            <div className="max-h-[62vh] space-y-8 overflow-y-auto px-5 py-4 sm:px-8">
+            <div className="max-h-[62vh] space-y-8 overflow-y-auto overflow-x-hidden px-5 py-4 sm:px-8">
               <div className="space-y-2">
                 <label className="text-sm font-semibold uppercase tracking-wide text-orange-700">
                   Room Name

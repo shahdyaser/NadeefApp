@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import BottomNav from "@/components/bottom-nav";
+import TaskEditorModal, {
+  type TaskEditorMemberOption,
+  type TaskEditorValues,
+} from "@/components/task-editor-modal";
 
 type TaskRow = Database["public"]["Tables"]["task"]["Row"];
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
@@ -78,14 +82,11 @@ export default function TaskDetailPage() {
   const [canManageTasks, setCanManageTasks] = useState(false);
   const [task, setTask] = useState<TaskRow | null>(null);
   const [room, setRoom] = useState<RoomRow | null>(null);
+  const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [members, setMembers] = useState<TaskEditorMemberOption[]>([]);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
   const [showEditModal, setShowEditModal] = useState(false);
-
-  const [editName, setEditName] = useState("");
-  const [editDueDate, setEditDueDate] = useState("");
-  const [editFrequencyDays, setEditFrequencyDays] = useState(1);
-  const [editEffortPoints, setEditEffortPoints] = useState(10);
 
   async function loadTaskDetail() {
     if (!supabaseClient) {
@@ -137,8 +138,7 @@ export default function TaskDetailPage() {
     const { data: roomData } = await supabaseClient
       .from("room")
       .select("*")
-      .eq("id", taskData.room_id)
-      .maybeSingle();
+      .eq("house_id", member.house_id);
 
     const { data: historyData, error: historyError } = await supabaseClient
       .from("task_history")
@@ -151,29 +151,34 @@ export default function TaskDetailPage() {
       return;
     }
 
-    const actorIds = Array.from(new Set((historyData ?? []).map((entry) => entry.user_id)));
-    const { data: profilesData } =
-      actorIds.length > 0
-        ? await supabaseClient
-            .from("user_house_bridge")
-            .select("user_id,display_name,avatar_url")
-            .in("user_id", actorIds)
-            .eq("house_id", member.house_id)
-        : { data: [] };
+    const { data: profilesData } = await supabaseClient
+      .from("user_house_bridge")
+      .select("user_id,display_name,avatar_url")
+      .eq("house_id", member.house_id);
+
+    const roomsInHouse = (roomData ?? []) as RoomRow[];
+    const taskRoom = roomsInHouse.find((entry) => entry.id === taskData.room_id) ?? null;
+    const memberOptions: TaskEditorMemberOption[] = (profilesData ?? []).map((profile) => {
+      const label = profile.display_name?.trim() || "Member";
+      return {
+        userId: profile.user_id,
+        label,
+        initials: initialsFromName(label),
+        avatarUrl: profile.avatar_url,
+      };
+    });
 
     setTask(taskData);
-    setRoom(roomData ?? null);
+    setRoom(taskRoom);
+    setRooms(roomsInHouse);
     setHistory((historyData ?? []) as HistoryRow[]);
+    setMembers(memberOptions);
     setMemberProfiles(
       Object.fromEntries((profilesData ?? []).map((p) => [p.user_id, p])) as Record<
         string,
         MemberProfile
       >,
     );
-    setEditName(taskData.name);
-    setEditDueDate(taskData.next_due_date ?? toDateKey(new Date()));
-    setEditFrequencyDays(Math.max(1, taskData.frequency_days));
-    setEditEffortPoints(Math.max(10, Math.min(30, taskData.effort_points)));
     setLoading(false);
   }
 
@@ -232,18 +237,21 @@ export default function TaskDetailPage() {
     router.replace("/tasks");
   }
 
-  async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveEdit(values: TaskEditorValues) {
     if (!supabaseClient || !task || !canManageTasks) return;
     setSaving(true);
     setError(null);
     const { error: updateError } = await supabaseClient
       .from("task")
       .update({
-        name: editName.trim(),
-        next_due_date: editDueDate,
-        frequency_days: Math.max(1, editFrequencyDays),
-        effort_points: Math.max(10, Math.min(30, Math.round(editEffortPoints / 10) * 10)),
+        name: values.name,
+        room_id: values.roomId,
+        next_due_date: values.nextDueDate,
+        frequency_days: Math.max(1, values.frequencyDays),
+        effort_points: values.effortPoints,
+        assigned_to: values.assignedUserIds[0] ?? null,
+        assigned_user_ids: values.assignedUserIds,
+        assignment_mode: values.assignmentMode,
       })
       .eq("id", task.id);
     setSaving(false);
@@ -489,71 +497,17 @@ export default function TaskDetailPage() {
         </section>
       </section>
 
-      {showEditModal ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={handleSaveEdit}
-            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.2)]"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Edit Task</h3>
-              <button
-                type="button"
-                onClick={() => setShowEditModal(false)}
-                className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100"
-              >
-                ✕
-              </button>
-            </div>
-            <label className="space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-slate-500">Task Name</span>
-              <input
-                value={editName}
-                onChange={(event) => setEditName(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">Due Date</span>
-              <input
-                type="date"
-                value={editDueDate}
-                onChange={(event) => setEditDueDate(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">Frequency (days)</span>
-              <input
-                type="number"
-                min={1}
-                value={editFrequencyDays}
-                onChange={(event) => setEditFrequencyDays(Math.max(1, Number(event.target.value) || 1))}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">Effort Points</span>
-              <select
-                value={editEffortPoints}
-                onChange={(event) => setEditEffortPoints(Number(event.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-400"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={30}>30</option>
-              </select>
-            </label>
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl bg-teal-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </form>
-        </div>
-      ) : null}
+      <TaskEditorModal
+        key={showEditModal ? `${task?.id ?? "task"}-open` : "closed"}
+        open={showEditModal}
+        title="Edit Sanctuary Task"
+        task={task}
+        rooms={rooms}
+        members={members}
+        saving={saving}
+        onClose={() => setShowEditModal(false)}
+        onSave={handleSaveEdit}
+      />
 
       <BottomNav />
     </main>

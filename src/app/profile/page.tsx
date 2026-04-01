@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
@@ -29,7 +29,6 @@ type ProfileCachePayload = {
   houseName: string;
   members: ProfileMember[];
 };
-type PreviewSlot = "test" | "morning" | "evening";
 const PROFILE_CACHE_KEY = "profile";
 
 const APP_SIGNUP_URL = process.env.NEXT_PUBLIC_APP_SIGNUP_URL || "http://localhost:3000";
@@ -44,6 +43,13 @@ function initialsFromName(name: string) {
   return value || "NM";
 }
 
+function toDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const supabaseClient = useMemo(() => {
@@ -56,7 +62,7 @@ export default function ProfilePage() {
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [sendingPushSlot, setSendingPushSlot] = useState<PreviewSlot | null>(null);
+  const [savingNotifications, setSavingNotifications] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +76,7 @@ export default function ProfilePage() {
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarFileName, setAvatarFileName] = useState("");
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [memberSince, setMemberSince] = useState("Recently joined");
 
@@ -80,8 +87,29 @@ export default function ProfilePage() {
   const [inviteCode, setInviteCode] = useState("NAD-000");
   const [houseName, setHouseName] = useState("Your Home");
   const [members, setMembers] = useState<ProfileMember[]>([]);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const initials = initialsFromName(displayName);
   const shownAvatarUrl = avatarPreviewUrl || avatarUrl;
+
+  function updateProfileCache(overrides: Partial<ProfileCachePayload> = {}) {
+    setViewCache<ProfileCachePayload>(PROFILE_CACHE_KEY, {
+      currentUserId,
+      houseId,
+      isOwner,
+      displayName,
+      avatarUrl,
+      notificationsEnabled,
+      memberSince,
+      totalPoints,
+      rank,
+      streakDays,
+      inviteCode,
+      houseName,
+      members,
+      ...overrides,
+    });
+  }
 
   const loadMembers = useCallback(
     async (targetHouseId: string) => {
@@ -172,6 +200,19 @@ export default function ProfilePage() {
       setNotificationsEnabled(bridge?.notifications_enabled ?? true);
       setStreakDays(bridge?.current_streak_days ?? 0);
 
+      const todayKey = toDateKey(new Date());
+      const { count: assignedOverdueCount } = await supabaseClient
+        .from("task")
+        .select("id", { count: "exact", head: true })
+        .eq("house_id", memberHouseId)
+        .eq("status", "active")
+        .not("next_due_date", "is", null)
+        .lt("next_due_date", todayKey)
+        .or(`assigned_to.eq.${user.id},assigned_user_ids.cs.{${user.id}}`);
+      if ((assignedOverdueCount ?? 0) > 0) {
+        setStreakDays(1);
+      }
+
       const { data: houseData, error: houseError } = await supabaseClient
         .from("house")
         .select("*")
@@ -236,7 +277,8 @@ export default function ProfilePage() {
                 return myIndex >= 0 ? `#${myIndex + 1}` : "#-";
               })()
             : "#-",
-        streakDays: bridge?.current_streak_days ?? 0,
+        streakDays:
+          (assignedOverdueCount ?? 0) > 0 ? 1 : (bridge?.current_streak_days ?? 0),
         inviteCode: house?.invite_code ?? "NAD-000",
         houseName: house?.name ?? "Your Home",
         members: ((await supabaseClient
@@ -302,7 +344,6 @@ export default function ProfilePage() {
       .update({
         display_name: cleanName,
         avatar_url: cleanAvatar || null,
-        notifications_enabled: notificationsEnabled,
       })
       .eq("user_id", currentUserId)
       .eq("house_id", houseId)
@@ -320,10 +361,15 @@ export default function ProfilePage() {
 
     setAvatarUrl(cleanAvatar || "");
     setAvatarFile(null);
+    setAvatarFileName("");
     if (avatarPreviewUrl) {
       URL.revokeObjectURL(avatarPreviewUrl);
     }
     setAvatarPreviewUrl(null);
+    updateProfileCache({
+      displayName: cleanName,
+      avatarUrl: cleanAvatar || "",
+    });
     setMessage("Profile settings updated.");
     await loadMembers(houseId);
   }
@@ -350,6 +396,49 @@ export default function ProfilePage() {
     setAvatarFile(file);
     setAvatarFileName(file.name);
     setError(null);
+    setShowAvatarPicker(false);
+    event.target.value = "";
+  }
+
+  function openGalleryPicker() {
+    setShowAvatarPicker(false);
+    galleryInputRef.current?.click();
+  }
+
+  function openCameraPicker() {
+    setShowAvatarPicker(false);
+    cameraInputRef.current?.click();
+  }
+
+  async function handleToggleNotifications() {
+    if (!supabaseClient || !houseId || !currentUserId || savingNotifications) return;
+
+    const nextValue = !notificationsEnabled;
+    setError(null);
+    setMessage(null);
+    setNotificationsEnabled(nextValue);
+    setSavingNotifications(true);
+
+    const { data: updatedRows, error: updateError } = await supabaseClient
+      .from("user_house_bridge")
+      .update({
+        notifications_enabled: nextValue,
+      })
+      .eq("user_id", currentUserId)
+      .eq("house_id", houseId)
+      .select("user_id");
+
+    setSavingNotifications(false);
+    if (updateError || !updatedRows || updatedRows.length === 0) {
+      setNotificationsEnabled(!nextValue);
+      setError(updateError?.message ?? "Notification setting could not be updated.");
+      return;
+    }
+
+    updateProfileCache({
+      notificationsEnabled: nextValue,
+    });
+    setMessage(nextValue ? "Notifications enabled." : "Notifications disabled.");
   }
 
   async function handleChangeRole(memberUserId: string, role: MemberRole) {
@@ -423,48 +512,6 @@ After signing up, enter this house code to join: ${inviteCode}`;
     router.replace("/");
   }
 
-  async function handleSendTestPush(slot: PreviewSlot) {
-    if (!supabaseClient) return;
-    setError(null);
-    setMessage(null);
-    setSendingPushSlot(slot);
-
-    const { data: sessionData } = await supabaseClient.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      setSendingPushSlot(null);
-      setError("Session expired. Please sign in again.");
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/notifications/test?slot=${slot}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        sent?: number;
-      };
-      if (!response.ok) {
-        setError(payload.error ?? "Could not send test push.");
-      } else {
-        const label =
-          slot === "morning" ? "morning preview" : slot === "evening" ? "evening preview" : "test push";
-        setMessage(
-          `${label} sent successfully${payload.sent ? ` (${payload.sent})` : ""}.`,
-        );
-      }
-    } catch {
-      setError("Could not send test push.");
-    } finally {
-      setSendingPushSlot(null);
-    }
-  }
-
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-6">
@@ -475,30 +522,136 @@ After signing up, enter this house code to join: ${inviteCode}`;
 
   return (
     <main className="min-h-screen bg-[#f7f9fb] px-6 pb-28 pt-6 text-[#191c1e]">
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        aria-label="Upload profile picture"
+        title="Upload profile picture"
+        onChange={(event) => void handleAvatarFileChange(event)}
+        className="hidden"
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        aria-label="Take profile picture"
+        title="Take profile picture"
+        onChange={(event) => void handleAvatarFileChange(event)}
+        className="hidden"
+      />
+
       <div className="mx-auto max-w-2xl space-y-8">
-        <section className="flex flex-col items-center py-6 text-center">
-          <div className="group relative">
-            <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-teal-700 to-teal-400 opacity-25 blur transition duration-1000 group-hover:opacity-50" />
-            <div
-              className="relative flex h-28 w-28 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-teal-100 to-cyan-100 text-3xl font-black text-teal-800 shadow-sm"
-              style={
-                shownAvatarUrl
-                  ? {
-                      backgroundImage: `url("${shownAvatarUrl}")`,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                    }
-                  : undefined
-              }
-            >
-              {!shownAvatarUrl ? initials : null}
+        <section className="rounded-3xl bg-white p-5 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="group relative mx-auto sm:mx-0">
+              <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-teal-700 to-teal-400 opacity-25 blur transition duration-1000 group-hover:opacity-50" />
+              <div
+                className="relative flex h-28 w-28 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-teal-100 to-cyan-100 text-3xl font-black text-teal-800 shadow-sm"
+                style={
+                  shownAvatarUrl
+                    ? {
+                        backgroundImage: `url("${shownAvatarUrl}")`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }
+                    : undefined
+                }
+              >
+                {!shownAvatarUrl ? initials : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAvatarPicker(true)}
+                className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white shadow-lg transition-transform active:scale-95"
+              >
+                Edit
+              </button>
+            </div>
+
+            <div className="min-w-0 flex-1 space-y-4">
+              <div className="text-center sm:text-left">
+                <h2 className="truncate text-3xl font-extrabold tracking-tight">{displayName}</h2>
+                <p className="mt-1 text-sm font-medium uppercase tracking-widest text-slate-500">
+                  {memberSince}
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Edit Name
+                  </span>
+                  <input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-800 outline-none ring-2 ring-transparent focus:ring-teal-300"
+                    placeholder="Your name"
+                  />
+                </label>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                {avatarFileName
+                  ? `Selected: ${avatarFileName}`
+                  : shownAvatarUrl
+                    ? "Current profile picture loaded."
+                    : "Upload JPG/PNG/WebP (max 5MB)."}
+              </p>
+
+              <button
+                type="button"
+                onClick={handleSaveProfile}
+                disabled={savingProfile}
+                className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-60 sm:w-auto"
+              >
+                {savingProfile ? "Saving..." : "Save Profile"}
+              </button>
             </div>
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold tracking-tight">{displayName}</h2>
-          <p className="mt-1 text-sm font-medium uppercase tracking-widest text-slate-500">
-            {memberSince}
-          </p>
         </section>
+
+        {showAvatarPicker ? (
+          <>
+            <button
+              type="button"
+              aria-label="Close photo picker"
+              onClick={() => setShowAvatarPicker(false)}
+              className="fixed inset-0 z-[80] bg-slate-950/35 backdrop-blur-[1px]"
+            />
+            <section className="fixed inset-x-0 bottom-0 z-[90] mx-auto w-full max-w-2xl rounded-t-[2rem] bg-white p-5 shadow-[0_-18px_60px_rgba(0,0,0,0.18)]">
+              <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-slate-200" />
+              <p className="text-center text-base font-extrabold text-slate-900">Update profile picture</p>
+              <p className="mt-1 text-center text-sm text-slate-500">
+                Choose how you want to add a new photo.
+              </p>
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={openCameraPicker}
+                  className="rounded-2xl bg-teal-700 px-4 py-4 text-sm font-bold text-white transition-transform active:scale-[0.99]"
+                >
+                  Take Picture
+                </button>
+                <button
+                  type="button"
+                  onClick={openGalleryPicker}
+                  className="rounded-2xl bg-slate-100 px-4 py-4 text-sm font-bold text-slate-900 transition-transform active:scale-[0.99]"
+                >
+                  Upload New Picture
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarPicker(false)}
+                  className="rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500"
+                >
+                  Cancel
+                </button>
+              </div>
+            </section>
+          </>
+        ) : null}
 
         {error ? (
           <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -556,89 +709,25 @@ After signing up, enter this house code to join: ${inviteCode}`;
             Account Settings
           </h3>
           <div className="space-y-4 rounded-2xl bg-white p-5 shadow-[0_10px_30px_rgba(0,0,0,0.02)]">
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Name
-              </span>
-              <input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-800 outline-none ring-2 ring-transparent focus:ring-teal-300"
-                placeholder="Your name"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Profile Picture
-              </span>
-              <div className="rounded-xl bg-slate-100 p-3">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => void handleAvatarFileChange(event)}
-                  className="w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-700 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white"
-                />
-                <p className="mt-2 text-[11px] text-slate-500">
-                  {avatarFileName
-                    ? `Selected: ${avatarFileName}`
-                    : shownAvatarUrl
-                      ? "Current profile picture loaded."
-                      : "Upload JPG/PNG/WebP (max 5MB)."}
-                </p>
-              </div>
-            </label>
-
             <button
               type="button"
-              onClick={() => setNotificationsEnabled((prev) => !prev)}
+              onClick={() => void handleToggleNotifications()}
+              disabled={savingNotifications}
               className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left ${
                 notificationsEnabled
                   ? "bg-teal-50 text-teal-800 ring-1 ring-teal-200"
                   : "bg-slate-100 text-slate-600"
-              }`}
+              } ${savingNotifications ? "opacity-60" : ""}`}
             >
               <span className="text-sm font-semibold">Notifications</span>
               <span className="text-xs font-bold uppercase">
-                {notificationsEnabled ? "Enabled" : "Disabled"}
+                {savingNotifications
+                  ? "Saving..."
+                  : notificationsEnabled
+                    ? "Enabled"
+                    : "Disabled"}
               </span>
             </button>
-
-            <button
-              type="button"
-              onClick={handleSaveProfile}
-              disabled={savingProfile}
-              className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
-            >
-              {savingProfile ? "Saving..." : "Save Settings"}
-            </button>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => void handleSendTestPush("morning")}
-                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
-                className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
-              >
-                {sendingPushSlot === "morning" ? "Sending..." : "Send Morning Preview"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSendTestPush("evening")}
-                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
-                className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
-              >
-                {sendingPushSlot === "evening" ? "Sending..." : "Send Evening Preview"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSendTestPush("test")}
-                disabled={Boolean(sendingPushSlot) || !notificationsEnabled}
-                className="rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm font-bold text-teal-800 disabled:opacity-60"
-              >
-                {sendingPushSlot === "test" ? "Sending..." : "Send Test Push"}
-              </button>
-            </div>
           </div>
         </section>
 

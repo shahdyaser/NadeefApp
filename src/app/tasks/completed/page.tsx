@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import BottomNav from "@/components/bottom-nav";
@@ -47,8 +47,9 @@ function formatCompletedAt(iso: string) {
   });
 }
 
-export default function CompletedTasksPage() {
+function CompletedTasksPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabaseClient = useMemo(() => {
     try {
       return getSupabaseBrowserClient();
@@ -134,7 +135,14 @@ export default function CompletedTasksPage() {
       return;
     }
 
-    const { data: historyData, error: historyError } = await supabaseClient
+    const windowValue = searchParams.get("window");
+    const todayOnly = windowValue === "today";
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    let historyQuery = supabaseClient
       .from("task_history")
       .select("*")
       .in(
@@ -143,6 +151,12 @@ export default function CompletedTasksPage() {
       )
       .gt("points_awarded", 0)
       .order("completed_at", { ascending: false });
+    if (todayOnly) {
+      historyQuery = historyQuery
+        .gte("completed_at", startOfDay.toISOString())
+        .lt("completed_at", endOfDay.toISOString());
+    }
+    const { data: historyData, error: historyError } = await historyQuery;
     if (historyError) {
       setError(historyError.message);
       setLoading(false);
@@ -202,7 +216,7 @@ export default function CompletedTasksPage() {
     );
     setGroups(grouped);
     setLoading(false);
-  }, [router, supabaseClient]);
+  }, [router, searchParams, supabaseClient]);
 
   useEffect(() => {
     void loadCompleted();
@@ -438,5 +452,19 @@ export default function CompletedTasksPage() {
 
       <BottomNav />
     </main>
+  );
+}
+
+export default function CompletedTasksPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex min-h-screen w-full max-w-xl items-center justify-center px-4">
+          <p className="text-sm text-slate-600">Loading completed tasks...</p>
+        </main>
+      }
+    >
+      <CompletedTasksPageContent />
+    </Suspense>
   );
 }

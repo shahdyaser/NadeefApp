@@ -230,6 +230,7 @@ export default function RoomDetailPage() {
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>("together");
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
   const [effortStars, setEffortStars] = useState<1 | 2 | 3>(1);
+  const [taskSourceStep, setTaskSourceStep] = useState<"choose" | "form">("choose");
   const [taskEntryMode, setTaskEntryMode] = useState<TaskEntryMode>("library");
   const [taskLibrarySearch, setTaskLibrarySearch] = useState("");
   const [selectedLibraryTaskId, setSelectedLibraryTaskId] = useState<string | null>(null);
@@ -254,9 +255,7 @@ export default function RoomDetailPage() {
   ) {
     setFrequencyValue(nextFrequencyValue);
     setFrequencyUnit(nextFrequencyUnit);
-    if (!editingTask) {
-      setStartingDueDate(getSuggestedDueDate(nextFrequencyValue, nextFrequencyUnit));
-    }
+    setStartingDueDate(getSuggestedDueDate(nextFrequencyValue, nextFrequencyUnit));
   }
 
   async function loadRoomData() {
@@ -438,9 +437,6 @@ export default function RoomDetailPage() {
       ? (Math.max(1, Math.min(3, selectedLibraryTask.default_effort)) as 1 | 2 | 3)
       : effortStars;
 
-    const nextDue = new Date();
-    nextDue.setDate(nextDue.getDate() + frequencyDays);
-
     setSaving(true);
 
     if (editingTask) {
@@ -474,9 +470,6 @@ export default function RoomDetailPage() {
 
       setMessage("Task updated.");
     } else {
-      const [startYear, startMonth, startDay] = startingDueDate.split("-").map(Number);
-      const firstDueDate = new Date(startYear, startMonth - 1, startDay);
-      firstDueDate.setDate(firstDueDate.getDate() + frequencyDays);
       const { error: insertError } = await supabaseClient.from("task").insert({
         room_id: selectedRoomId,
         house_id: room.house_id,
@@ -487,7 +480,7 @@ export default function RoomDetailPage() {
         frequency_days: frequencyDays,
         effort_points: EFFORT_TO_POINTS[effectiveEffortStars],
         last_completed_at: null,
-        next_due_date: formatDateKey(firstDueDate),
+        next_due_date: startingDueDate,
         status: "active",
       });
       setSaving(false);
@@ -693,6 +686,7 @@ export default function RoomDetailPage() {
     setTaskEntryMode("library");
     setTaskLibrarySearch("");
     setSelectedLibraryTaskId(null);
+    setTaskSourceStep("choose");
     setShowAddTask(true);
   }
 
@@ -733,6 +727,7 @@ export default function RoomDetailPage() {
     setTaskEntryMode("custom");
     setTaskLibrarySearch(task.name);
     setSelectedLibraryTaskId(null);
+    setTaskSourceStep("form");
     setShowAddTask(true);
   }
 
@@ -845,8 +840,14 @@ export default function RoomDetailPage() {
     (task) => task.status === "active",
   );
 
+  const actionableTaskIds = new Set<string>([
+    ...duePeriodTasks.map((task) => task.id),
+    ...overduePeriodTasks.map((task) => task.id),
+  ]);
+  const effectiveDonePeriodTasks = donePeriodTasks.filter((task) => !actionableTaskIds.has(task.id));
+
   const dueTodayCount = duePeriodTasks.length;
-  const doneTodayCount = donePeriodTasks.length;
+  const doneTodayCount = effectiveDonePeriodTasks.length;
   const overdueCount = overduePeriodTasks.length;
   const activeTaskCount = activeTasks.length;
   const pendingToday = dueTodayCount + overdueCount;
@@ -860,15 +861,15 @@ export default function RoomDetailPage() {
   const freshnessTone = getFreshnessTone(cleanliness);
 
   const allPeriodTaskIds = new Set<string>([
-    ...donePeriodTasks.map((task) => task.id),
+    ...effectiveDonePeriodTasks.map((task) => task.id),
     ...duePeriodTasks.map((task) => task.id),
     ...overduePeriodTasks.map((task) => task.id),
   ]);
-  const doneTaskIds = new Set(donePeriodTasks.map((task) => task.id));
+  const doneTaskIds = new Set(effectiveDonePeriodTasks.map((task) => task.id));
   const periodTasks = tasks.filter((task) => allPeriodTaskIds.has(task.id));
   const filteredTasks = periodTasks.filter((task) => {
     if (taskListFilter === "done_today") {
-      return donePeriodTasks.some((row) => row.id === task.id);
+      return doneTaskIds.has(task.id);
     }
     if (taskListFilter === "due_today") {
       return duePeriodTasks.some((row) => row.id === task.id);
@@ -1268,14 +1269,14 @@ export default function RoomDetailPage() {
       {showAddTask && (
         <>
           <div className="fixed inset-0 z-[60] bg-black/10 backdrop-blur-sm" />
-          <section className="fixed bottom-0 left-0 right-0 z-[70] mx-auto w-full max-w-2xl overflow-hidden rounded-t-[2.5rem] bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.08)]">
+          <section className="fixed bottom-0 left-0 right-0 z-[70] mx-auto w-full max-w-2xl overflow-hidden overflow-x-hidden rounded-t-[2.5rem] bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.08)]">
             <div className="flex justify-center pb-2 pt-4">
               <div className="h-1.5 w-12 rounded-full bg-slate-300" />
             </div>
 
             <form
               onSubmit={handleCreateTask}
-              className="hide-scrollbar max-h-[82vh] space-y-8 overflow-y-auto px-5 pb-10 pt-4 sm:px-8"
+              className="hide-scrollbar max-h-[82vh] space-y-8 overflow-y-auto overflow-x-hidden px-5 pb-10 pt-4 sm:px-8"
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold tracking-tight text-slate-900">
@@ -1290,85 +1291,96 @@ export default function RoomDetailPage() {
                 </button>
               </div>
 
-              <div className="space-y-3">
-                {!editingTask && (
-                  <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Task Source
+              {!editingTask && taskSourceStep === "choose" ? (
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Add Task From
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskEntryMode("library");
+                      setTaskSourceStep("form");
+                    }}
+                    className="w-full rounded-2xl bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-200 hover:ring-teal-300"
+                  >
+                    <p className="text-sm font-bold text-slate-900">Task Library</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Pick a recommended task and auto-fill frequency & effort.
                     </p>
-                    <div className="inline-flex rounded-full bg-slate-200 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setTaskEntryMode("library")}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          taskEntryMode === "library"
-                            ? "bg-teal-700 text-white"
-                            : "text-slate-600"
-                        }`}
-                      >
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskEntryMode("custom");
+                      setTaskSourceStep("form");
+                    }}
+                    className="w-full rounded-2xl bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-200 hover:ring-teal-300"
+                  >
+                    <p className="text-sm font-bold text-slate-900">Custom Task</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Create your own task name, frequency, and due date.
+                    </p>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {!editingTask && taskEntryMode === "library" ? (
+                    <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Search Library
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEntryMode("custom")}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          taskEntryMode === "custom"
-                            ? "bg-teal-700 text-white"
-                            : "text-slate-600"
-                        }`}
-                      >
-                        Custom Task
-                      </button>
-                    </div>
-
-                    {taskEntryMode === "library" && (
-                      <div className="space-y-2">
-                        <input
-                          value={taskLibrarySearch}
-                          onChange={(event) => {
-                            setTaskLibrarySearch(event.target.value);
-                            setSelectedLibraryTaskId(null);
-                          }}
-                          placeholder="Search task library (vacuum, sink, mop...)"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-400"
-                        />
-                        <div className="space-y-1">
-                          {filteredLibraryTasks.map((entry) => (
-                            <button
-                              key={entry.id}
-                              type="button"
-                              onClick={() => applyLibraryTaskSelection(entry)}
-                              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:border-teal-300"
-                            >
-                              <span className="text-sm font-medium text-slate-700">{entry.name}</span>
-                              <span className="text-[10px] font-semibold text-slate-500">
-                                Every {entry.default_frequency_days}d - Effort {entry.default_effort}
-                              </span>
-                            </button>
-                          ))}
-                          {!filteredLibraryTasks.length && (
-                            <p className="text-xs text-slate-500">
-                              No library match. Switch to custom task.
-                            </p>
-                          )}
-                        </div>
+                      </p>
+                      <input
+                        value={taskLibrarySearch}
+                        onChange={(event) => {
+                          setTaskLibrarySearch(event.target.value);
+                          setSelectedLibraryTaskId(null);
+                        }}
+                        placeholder="Search task library (vacuum, sink, mop...)"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-400"
+                      />
+                      <div className="space-y-1">
+                        {filteredLibraryTasks.map((entry) => (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            onClick={() => applyLibraryTaskSelection(entry)}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:border-teal-300"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">
+                              {entry.name}
+                            </span>
+                            <span className="flex-shrink-0 text-[10px] font-semibold text-slate-500">
+                              Every {entry.default_frequency_days}d · Effort {entry.default_effort}
+                            </span>
+                          </button>
+                        ))}
+                        {!filteredLibraryTasks.length && (
+                          <p className="text-xs text-slate-500">
+                            No library match. You can switch to a custom task.
+                          </p>
+                        )}
                       </div>
-                    )}
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-3">
+                    <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
+                      Task Name
+                    </label>
+                    <input
+                      required
+                      value={taskName}
+                      onChange={(event) => setTaskName(event.target.value)}
+                      className="w-full min-w-0 rounded-xl border-none bg-slate-100 px-4 py-3.5 text-sm font-semibold placeholder:text-slate-400 outline-none ring-2 ring-transparent transition-all focus:ring-teal-300"
+                      placeholder="Deep Clean Living Room..."
+                    />
                   </div>
-                )}
+                </>
+              )}
 
-                <label className="ml-1 block text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Task Name
-                </label>
-                <input
-                  required
-                  value={taskName}
-                  onChange={(event) => setTaskName(event.target.value)}
-                  className="w-full rounded-xl border-none bg-slate-100 px-6 py-5 text-lg font-medium placeholder:text-slate-400 outline-none ring-2 ring-transparent transition-all focus:ring-teal-300"
-                  placeholder="Deep Clean Living Room..."
-                />
-              </div>
-
+              {(editingTask || taskSourceStep === "form") ? (
+                <>
               <div className="space-y-4">
                 <div className="flex items-end justify-between px-1">
                   <label className="block text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -1383,10 +1395,10 @@ export default function RoomDetailPage() {
                         type="button"
                         key={r.id}
                         onClick={() => setSelectedRoomId(r.id)}
-                        className="flex flex-shrink-0 flex-col items-center gap-3"
+                        className="flex flex-shrink-0 flex-col items-center gap-2"
                       >
                         <span
-                          className={`flex h-20 w-20 items-center justify-center rounded-xl text-3xl ${
+                          className={`flex h-16 w-16 items-center justify-center rounded-xl text-2xl ${
                             active
                               ? "bg-teal-200 text-teal-800 shadow-lg"
                               : "bg-slate-100 text-slate-400"
@@ -1436,7 +1448,7 @@ export default function RoomDetailPage() {
                           const nextFrequencyValue = Math.max(1, Number(event.target.value) || 1);
                           setFrequencyAndDue(nextFrequencyValue, frequencyUnit);
                         }}
-                        className="w-14 bg-transparent p-0 text-center text-xl font-bold text-slate-900 outline-none"
+                        className="w-14 bg-transparent p-0 text-center text-base font-bold text-slate-900 outline-none"
                       />
                       <button
                         type="button"
@@ -1485,7 +1497,7 @@ export default function RoomDetailPage() {
                           key={star}
                           type="button"
                           onClick={() => setEffortStars(star as 1 | 2 | 3)}
-                          className={`text-3xl transition-transform active:scale-90 ${
+                          className={`text-2xl transition-transform active:scale-90 ${
                             active ? "text-orange-400" : "text-slate-300"
                           }`}
                         >
@@ -1598,7 +1610,7 @@ export default function RoomDetailPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex w-full items-center justify-center gap-3 rounded-full bg-gradient-to-r from-teal-700 to-teal-400 py-5 text-lg font-bold text-white shadow-xl shadow-teal-700/20 transition-all active:scale-[0.98] disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-teal-700 to-teal-400 py-3.5 text-sm font-bold text-white shadow-xl shadow-teal-700/20 transition-all active:scale-[0.98] disabled:opacity-60"
                 >
                   <span>✓</span>
                   {saving
@@ -1609,10 +1621,9 @@ export default function RoomDetailPage() {
                       ? "Save Task"
                       : "Create Task"}
                 </button>
-                <p className="text-center text-sm font-medium text-slate-500">
-                  This task will be added to your <span className="text-slate-900">Weekly Flow</span>
-                </p>
               </div>
+                </>
+              ) : null}
             </form>
           </section>
         </>

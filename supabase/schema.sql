@@ -305,6 +305,8 @@ declare
   v_travel_gap integer;
   v_effective_gap integer;
   v_next_streak integer;
+  v_has_overdue boolean;
+  v_has_due_remaining boolean;
 begin
   select t.house_id, t.frequency_days
     into v_house_id, v_frequency
@@ -341,7 +343,41 @@ begin
   where h.id = v_house_id;
 
   v_completion_date := new.completed_at::date;
-  if v_last_streak_on is null then
+  -- New streak rules:
+  -- 1) If user has ANY overdue assigned tasks, streak resets to 1.
+  -- 2) Streak only increments when user has finished ALL assigned due/overdue tasks for the day.
+  select exists (
+    select 1
+    from public.task t
+    where t.house_id = v_house_id
+      and t.status = 'active'
+      and t.next_due_date is not null
+      and t.next_due_date < v_completion_date
+      and (
+        t.assigned_to = new.user_id
+        or (t.assigned_user_ids is not null and new.user_id = any(t.assigned_user_ids))
+      )
+  ) into v_has_overdue;
+
+  select exists (
+    select 1
+    from public.task t
+    where t.house_id = v_house_id
+      and t.status = 'active'
+      and t.next_due_date is not null
+      and t.next_due_date <= v_completion_date
+      and (
+        t.assigned_to = new.user_id
+        or (t.assigned_user_ids is not null and new.user_id = any(t.assigned_user_ids))
+      )
+  ) into v_has_due_remaining;
+
+  if v_has_overdue then
+    v_next_streak := 1;
+  elsif v_has_due_remaining then
+    -- Not all due tasks are finished yet; keep current streak unchanged.
+    v_next_streak := coalesce(v_current_streak, 0);
+  elsif v_last_streak_on is null then
     v_next_streak := 1;
   elsif v_last_streak_on = v_completion_date then
     v_next_streak := coalesce(v_current_streak, 0);
@@ -360,7 +396,10 @@ begin
   set
     total_points = total_points + new.points_awarded,
     current_streak_days = v_next_streak,
-    last_opened_on = v_completion_date,
+    last_opened_on = case
+      when v_has_overdue or not v_has_due_remaining then v_completion_date
+      else last_opened_on
+    end,
     last_seen_travel_offset_days = coalesce(v_total_travel_offset, 0)
   where user_id = new.user_id
     and house_id = v_house_id;
@@ -528,11 +567,15 @@ begin
   )
   select
     bu.user_id,
-    (
-      coalesce(ts.effort_points, 0)
-      + (coalesce(ts.tasks_done, 0) * 8)
-      + (coalesce(uhf.freshness_score, 100) * 3)
-      + (coalesce(us.streak_days, 0) * 5)
+    round(
+      1000 * (
+        (least(coalesce(ts.effort_points, 0)::numeric / 300.0, 1.0) * 0.20)
+        + (least(coalesce(ts.tasks_done, 0)::numeric / 30.0, 1.0) * 0.20)
+        + (
+          greatest(0.0, least(coalesce(uhf.freshness_score, 100)::numeric, 100.0)) / 100.0
+        ) * 0.30
+        + (least(coalesce(us.streak_days, 0)::numeric / 30.0, 1.0) * 0.30)
+      )
     )::bigint as points
   from base_users bu
   left join task_stats ts on ts.user_id = bu.user_id
