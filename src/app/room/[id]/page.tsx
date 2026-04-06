@@ -250,6 +250,8 @@ export default function RoomDetailPage() {
   const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
     null,
   );
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [pendingFocusTaskId, setPendingFocusTaskId] = useState<string | null>(null);
 
   function getSuggestedDueDate(nextFrequencyValue: number, nextFrequencyUnit: "days" | "weeks" | "months") {
     const nextDue = new Date();
@@ -276,6 +278,63 @@ export default function RoomDetailPage() {
       // ignore
     }
   }, [roomId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get("focusTask");
+    if (!taskId) return;
+    setPendingFocusTaskId(taskId);
+  }, [roomId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading) return;
+    if (!pendingFocusTaskId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 60; // ~1s at 60fps
+
+    const tryFocus = () => {
+      if (cancelled) return;
+      attempts += 1;
+      const taskId = pendingFocusTaskId;
+      const el = document.getElementById(`task-card-${taskId}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "auto" });
+        window.requestAnimationFrame(() => {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        });
+        setFocusedTaskId(taskId);
+        window.setTimeout(
+          () => setFocusedTaskId((current) => (current === taskId ? null : current)),
+          1600,
+        );
+
+        // Remove focusTask from URL (so it doesn't refocus on refresh).
+        const params = new URLSearchParams(window.location.search);
+        params.delete("focusTask");
+        const next = params.toString();
+        const url = next ? `${window.location.pathname}?${next}` : window.location.pathname;
+        window.history.replaceState(window.history.state, "", url);
+
+        setPendingFocusTaskId(null);
+        return;
+      }
+
+      if (attempts < maxAttempts) {
+        window.requestAnimationFrame(tryFocus);
+      } else {
+        setPendingFocusTaskId(null);
+      }
+    };
+
+    window.requestAnimationFrame(tryFocus);
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, pendingFocusTaskId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1196,7 +1255,13 @@ export default function RoomDetailPage() {
                   : 0;
 
             return (
-              <div key={task.id} className="relative overflow-hidden rounded-2xl">
+              <div
+                key={task.id}
+                id={`task-card-${task.id}`}
+                className={`relative overflow-hidden rounded-2xl ${
+                  focusedTaskId === task.id ? "ring-2 ring-teal-400 ring-offset-2" : ""
+                }`}
+              >
                 {canManageTasks ? (
                   <div className="absolute inset-y-0 right-0 flex w-[204px]">
                     <button
@@ -1287,7 +1352,7 @@ export default function RoomDetailPage() {
                     <div>
                       <h4 className="font-bold text-slate-900">
                         <Link
-                          href={`/tasks/${task.id}`}
+                          href={`/tasks/${task.id}?from=room&roomId=${roomId}&focusTask=${task.id}`}
                           scroll={false}
                           className="hover:text-teal-700"
                           onClick={(event) => {
@@ -1315,7 +1380,7 @@ export default function RoomDetailPage() {
                                 star <= effortStars ? "text-amber-500" : "text-slate-300"
                               }`}
                             >
-                              ★
+                              ●
                             </span>
                           ))}
                         </div>
@@ -1619,7 +1684,7 @@ export default function RoomDetailPage() {
                             active ? "text-orange-400" : "text-slate-300"
                           }`}
                         >
-                          ★
+                          ●
                         </button>
                       );
                     })}

@@ -157,9 +157,11 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [houseId, setHouseId] = useState<string | null>(null);
   const [canManageTasks, setCanManageTasks] = useState(false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [showAddTask, setShowAddTask] = useState(false);
   const [postponeTask, setPostponeTask] = useState<TaskRow | null>(null);
   const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
     null,
@@ -177,6 +179,8 @@ export default function TasksPage() {
   const [selectedRoomFilter, setSelectedRoomFilter] = useState("all");
   const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState("all");
   const [selectedDueDateFilter, setSelectedDueDateFilter] = useState<DueDateFilter>("all");
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [pendingFocusTaskId, setPendingFocusTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     const cached = getViewCache<TasksCachePayload>(TASKS_CACHE_KEY);
@@ -195,6 +199,62 @@ export default function TasksPage() {
       setLoading(false);
     }, 0);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get("focusTask");
+    if (!taskId) return;
+    window.setTimeout(() => setPendingFocusTaskId(taskId), 0);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading) return;
+    if (!pendingFocusTaskId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    const tryFocus = () => {
+      if (cancelled) return;
+      attempts += 1;
+      const taskId = pendingFocusTaskId;
+      const el = document.getElementById(`task-card-${taskId}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "auto" });
+        window.requestAnimationFrame(() => {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        });
+        setFocusedTaskId(taskId);
+        window.setTimeout(
+          () => setFocusedTaskId((current) => (current === taskId ? null : current)),
+          1600,
+        );
+
+        const params = new URLSearchParams(window.location.search);
+        params.delete("focusTask");
+        const next = params.toString();
+        const url = next ? `${window.location.pathname}?${next}` : window.location.pathname;
+        window.history.replaceState(window.history.state, "", url);
+
+        setPendingFocusTaskId(null);
+        return;
+      }
+
+      if (attempts < maxAttempts) {
+        window.requestAnimationFrame(tryFocus);
+      } else {
+        setPendingFocusTaskId(null);
+      }
+    };
+
+    window.requestAnimationFrame(tryFocus);
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, pendingFocusTaskId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -274,6 +334,7 @@ export default function TasksPage() {
         router.replace("/setup");
         return;
       }
+      setHouseId(houseId);
       setCanManageTasks(role === "owner" || role === "member");
 
       const { data: roomData, error: roomError } = await supabaseClient
@@ -465,30 +526,59 @@ export default function TasksPage() {
     setEditingTask(task);
   }
 
-  async function handleSaveTaskEdit(values: TaskEditorValues) {
-    if (!supabaseClient || !editingTask || !canManageTasks) return;
+  function openAddTaskModal() {
+    if (!canManageTasks) return;
+    setEditingTask(null);
+    setShowAddTask(true);
+  }
+
+  async function handleSaveTask(values: TaskEditorValues) {
+    if (!supabaseClient || !canManageTasks) return;
     setError(null);
     setSavingTaskEdit(true);
-    const { error: updateError } = await supabaseClient
-      .from("task")
-      .update({
-        name: values.name,
-        room_id: values.roomId,
-        next_due_date: values.nextDueDate,
-        frequency_days: Math.max(1, values.frequencyDays),
-        effort_points: values.effortPoints,
-        assigned_to: values.assignedUserIds[0] ?? null,
-        assigned_user_ids: values.assignedUserIds,
-        assignment_mode: values.assignmentMode,
-      })
-      .eq("id", editingTask.id);
-    setSavingTaskEdit(false);
-    if (updateError) {
-      setError(updateError.message);
-      return;
+    try {
+      if (editingTask) {
+        const { error: updateError } = await supabaseClient
+          .from("task")
+          .update({
+            name: values.name,
+            room_id: values.roomId,
+            next_due_date: values.nextDueDate,
+            frequency_days: Math.max(1, values.frequencyDays),
+            effort_points: values.effortPoints,
+            assigned_to: values.assignedUserIds[0] ?? null,
+            assigned_user_ids: values.assignedUserIds,
+            assignment_mode: values.assignmentMode,
+          })
+          .eq("id", editingTask.id);
+        if (updateError) throw updateError;
+      } else {
+        if (!houseId) {
+          throw new Error("House is not loaded yet. Please try again.");
+        }
+        const { error: insertError } = await supabaseClient.from("task").insert({
+          house_id: houseId,
+          room_id: values.roomId,
+          name: values.name,
+          next_due_date: values.nextDueDate,
+          frequency_days: Math.max(1, values.frequencyDays),
+          effort_points: values.effortPoints,
+          assigned_to: values.assignedUserIds[0] ?? null,
+          assigned_user_ids: values.assignedUserIds,
+          assignment_mode: values.assignmentMode,
+          last_completed_at: null,
+          status: "active",
+        });
+        if (insertError) throw insertError;
+      }
+      setEditingTask(null);
+      setShowAddTask(false);
+      await loadTasks();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save task.");
+    } finally {
+      setSavingTaskEdit(false);
     }
-    setEditingTask(null);
-    await loadTasks();
   }
 
   if (loading) {
@@ -852,6 +942,7 @@ export default function TasksPage() {
                 onSkipTask={handleSkipTask}
                 onDeleteTask={handleDeleteTask}
                 onNavigateTask={saveTasksScroll}
+                focusedTaskId={focusedTaskId}
                 canManageTasks={canManageTasks}
                 memberProfiles={memberProfiles}
               />
@@ -865,15 +956,18 @@ export default function TasksPage() {
       </section>
 
       <TaskEditorModal
-        key={editingTask?.id ?? "closed"}
-        open={!!editingTask}
-        title="Edit Sanctuary Task"
+        key={editingTask?.id ?? (showAddTask ? "new-open" : "closed")}
+        open={showAddTask || !!editingTask}
+        title={editingTask ? "Edit Sanctuary Task" : "Add Sanctuary Task"}
         task={editingTask}
         rooms={rooms}
         members={members}
         saving={savingTaskEdit}
-        onClose={() => setEditingTask(null)}
-        onSave={handleSaveTaskEdit}
+        onClose={() => {
+          setEditingTask(null);
+          setShowAddTask(false);
+        }}
+        onSave={handleSaveTask}
       />
 
       <PostponeSkipModal
@@ -892,6 +986,18 @@ export default function TasksPage() {
       />
 
       <BottomNav />
+
+      {canManageTasks ? (
+        <button
+          type="button"
+          onClick={openAddTaskModal}
+          className="fixed bottom-24 right-4 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-teal-700 text-2xl font-bold text-white shadow-xl shadow-teal-700/30 transition-transform active:scale-95 sm:right-6"
+          aria-label="Add task"
+          title="Add task"
+        >
+          +
+        </button>
+      ) : null}
     </main>
   );
 }
@@ -906,6 +1012,7 @@ function TaskGroup({
   onSkipTask,
   onDeleteTask,
   onNavigateTask,
+  focusedTaskId,
   canManageTasks,
   completingTaskId,
   memberProfiles,
@@ -919,6 +1026,7 @@ function TaskGroup({
   onSkipTask: (task: TaskRow) => void;
   onDeleteTask: (task: TaskRow) => void;
   onNavigateTask: () => void;
+  focusedTaskId: string | null;
   canManageTasks: boolean;
   completingTaskId: string | null;
   memberProfiles: Record<string, MemberProfile>;
@@ -1021,7 +1129,13 @@ function TaskGroup({
                   !!task.next_due_date && task.next_due_date <= todayIso;
 
                 return (
-                  <div key={task.id} className="relative overflow-hidden rounded-xl">
+                  <div
+                    key={task.id}
+                    id={`task-card-${task.id}`}
+                    className={`relative overflow-hidden rounded-xl ${
+                      focusedTaskId === task.id ? "ring-2 ring-teal-400 ring-offset-2" : ""
+                    }`}
+                  >
                     {canManageTasks ? (
                       <div className="absolute inset-y-0 right-0 flex w-[204px]">
                         <button
@@ -1127,7 +1241,7 @@ function TaskGroup({
                         </div>
                         <div className="min-w-0">
                           <Link
-                            href={`/tasks/${task.id}`}
+                            href={`/tasks/${task.id}?from=tasks&focusTask=${task.id}`}
                             scroll={false}
                             className="truncate text-xs font-bold text-slate-900 hover:text-teal-700"
                             onClick={(event) => {
@@ -1159,7 +1273,7 @@ function TaskGroup({
                                       : "text-slate-300"
                                   }`}
                                 >
-                                  ★
+                                  ●
                                 </span>
                               ))}
                             </div>

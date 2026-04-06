@@ -350,7 +350,7 @@ export default function TaskEditorModal({
                         active ? "text-orange-400" : "text-slate-300"
                       }`}
                     >
-                      ★
+                      ●
                     </button>
                   );
                 })}

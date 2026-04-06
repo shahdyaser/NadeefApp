@@ -91,6 +91,9 @@ export default function TaskDetailPage() {
   const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
     null,
   );
+  const [returnRoomId, setReturnRoomId] = useState<string | null>(null);
+  const [returnFocusTaskId, setReturnFocusTaskId] = useState<string | null>(null);
+  const [returnTasksFocusTaskId, setReturnTasksFocusTaskId] = useState<string | null>(null);
 
   async function loadTaskDetail() {
     if (!supabaseClient) {
@@ -187,6 +190,25 @@ export default function TaskDetailPage() {
   }
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const from = sp.get("from");
+      const roomId = sp.get("roomId");
+      const focusTask = sp.get("focusTask");
+      if (from === "room" && roomId) {
+        setReturnRoomId(roomId);
+        setReturnFocusTaskId(focusTask || taskId);
+        setReturnTasksFocusTaskId(null);
+      } else if (from === "tasks") {
+        setReturnRoomId(null);
+        setReturnFocusTaskId(null);
+        setReturnTasksFocusTaskId(focusTask || taskId);
+      } else {
+        setReturnRoomId(null);
+        setReturnFocusTaskId(null);
+        setReturnTasksFocusTaskId(null);
+      }
+    }
     void loadTaskDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
@@ -328,8 +350,17 @@ export default function TaskDetailPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fb] pb-24 text-[#191c1e]">
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white/90 px-4 shadow-[0_20px_40px_-12px_rgba(25,28,30,0.06)] backdrop-blur-xl sm:px-6">
-        <Link href="/tasks" className="text-sm font-semibold text-teal-700">
-          ← Tasks
+        <Link
+          href={
+            returnRoomId
+              ? `/room/${returnRoomId}${returnFocusTaskId ? `?focusTask=${returnFocusTaskId}` : ""}`
+              : returnTasksFocusTaskId
+                ? `/tasks?focusTask=${returnTasksFocusTaskId}`
+                : "/tasks"
+          }
+          className="text-sm font-semibold text-teal-700"
+        >
+          ← Back
         </Link>
         <p className="truncate px-3 text-sm font-bold">{task.name}</p>
         <span className="w-[54px] text-right text-xs text-slate-500">{room?.name ?? "Room"}</span>

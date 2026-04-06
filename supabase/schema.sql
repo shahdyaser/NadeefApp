@@ -240,7 +240,7 @@ create table if not exists public.push_reminder_log (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   house_id uuid not null references public.house(id) on delete cascade,
-  slot text not null check (slot in ('morning', 'evening')),
+  slot text not null check (slot in ('morning', 'afternoon', 'evening')),
   local_date date not null,
   created_at timestamptz not null default now(),
   unique (user_id, house_id, slot, local_date)

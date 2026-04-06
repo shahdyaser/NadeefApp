@@ -3,9 +3,10 @@ import type { PushSubscription } from "web-push";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getWebPush, initWebPush } from "@/lib/notifications/web-push";
 
-type ReminderSlot = "morning" | "evening";
+type ReminderSlot = "morning" | "afternoon" | "evening";
 const SLOT_HOURS: Record<ReminderSlot, number> = {
   morning: 8,
+  afternoon: 15,
   evening: 20,
 };
 
@@ -33,6 +34,7 @@ function hourInTimezone(date: Date, timeZone: string) {
 
 function getSlotForHour(hour: number): ReminderSlot | null {
   if (hour === SLOT_HOURS.morning) return "morning";
+  if (hour === SLOT_HOURS.afternoon) return "afternoon";
   if (hour === SLOT_HOURS.evening) return "evening";
   return null;
 }
@@ -42,6 +44,12 @@ function reminderMessage(slot: ReminderSlot, pendingCount: number) {
     return {
       title: "Good Morning from Nadeef ☀️",
       body: `🌿 A fresh home starts with one small win. You have ${pendingCount} task${pendingCount === 1 ? "" : "s"} today — you got this!`,
+    };
+  }
+  if (slot === "afternoon") {
+    return {
+      title: "Good Afternoon from Nadeef 🌤️",
+      body: `☕ A quick check-in: you still have ${pendingCount} task${pendingCount === 1 ? "" : "s"} due. One small win now makes tonight easier.`,
     };
   }
   return {
@@ -62,7 +70,7 @@ function isAuthorized(request: Request) {
 function getForcedSlot(request: Request): ReminderSlot | null {
   const url = new URL(request.url);
   const value = url.searchParams.get("slot");
-  return value === "morning" || value === "evening" ? value : null;
+  return value === "morning" || value === "afternoon" || value === "evening" ? value : null;
 }
 
 export async function POST(request: Request) {

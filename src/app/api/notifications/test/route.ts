@@ -5,7 +5,7 @@ import type { PushSubscription } from "web-push";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getWebPush, initWebPush } from "@/lib/notifications/web-push";
 
-type TestSlot = "test" | "morning" | "evening";
+type TestSlot = "test" | "morning" | "afternoon" | "evening";
 
 function getAuthedClient(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,7 +27,7 @@ function getAuthedClient(request: Request) {
 function parseSlot(request: Request): TestSlot {
   const url = new URL(request.url);
   const raw = url.searchParams.get("slot");
-  if (raw === "morning" || raw === "evening") {
+  if (raw === "morning" || raw === "afternoon" || raw === "evening") {
     return raw;
   }
   return "test";
@@ -38,6 +38,12 @@ function payloadForSlot(slot: TestSlot) {
     return {
       title: "Good Morning from Nadeef ☀️",
       body: "🌿 A fresh home starts with one small win. You have 5 tasks today — you got this!",
+    };
+  }
+  if (slot === "afternoon") {
+    return {
+      title: "Good Afternoon from Nadeef 🌤️",
+      body: "☕ A quick check-in: you still have 5 tasks due. One small win now makes tonight easier.",
     };
   }
   if (slot === "evening") {

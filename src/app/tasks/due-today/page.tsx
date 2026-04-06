@@ -528,7 +528,7 @@ function DueTodayPageContent() {
                                 star <= effortStars ? "text-amber-500" : "text-slate-300"
                               }`}
                             >
-                              ★
+                              ●
                             </span>
                           ))}
                         </div>
