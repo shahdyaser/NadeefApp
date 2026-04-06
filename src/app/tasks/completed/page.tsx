@@ -402,7 +402,7 @@ function CompletedTasksPageContent() {
                           {item.taskName}
                         </Link>
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-slate-500" suppressHydrationWarning>
                         Done {formatCompletedAt(item.history.completed_at)}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">

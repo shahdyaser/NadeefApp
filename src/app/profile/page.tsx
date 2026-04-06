@@ -672,7 +672,7 @@ After signing up, enter this house code to join: ${inviteCode}`;
                 Total Smart Points
               </span>
               <span className="flex items-baseline gap-1 text-4xl font-black text-teal-700">
-                {totalPoints.toLocaleString()}{" "}
+                <span suppressHydrationWarning>{totalPoints.toLocaleString()}</span>{" "}
                 <span className="text-sm font-bold tracking-normal text-slate-500">pts</span>
               </span>
             </div>

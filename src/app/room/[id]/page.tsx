@@ -1,10 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
+import { useScrollRestoration } from "@/lib/scroll-restoration";
+import PostponeSkipModal, { type PostponeChoice } from "@/components/postpone-skip-modal";
 
 type RoomRow = Database["public"]["Tables"]["room"]["Row"];
 type TaskRow = Database["public"]["Tables"]["task"]["Row"];
@@ -187,6 +189,7 @@ function getFreshnessTone(freshness: number) {
 }
 
 export default function RoomDetailPage() {
+  const saveRoomScroll = useScrollRestoration("room");
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const roomId = params.id;
@@ -238,9 +241,15 @@ export default function RoomDetailPage() {
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragOffset, setDragOffset] = useState(0);
+  const dragOriginXRef = useRef(0);
+  const dragHasMovedRef = useRef(false);
   const [taskListFilter, setTaskListFilter] = useState<TaskListFilter>("all");
   const [periodWindow, setPeriodWindow] = useState<PeriodWindow>("today");
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [postponeTask, setPostponeTask] = useState<TaskRow | null>(null);
+  const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
+    null,
+  );
 
   function getSuggestedDueDate(nextFrequencyValue: number, nextFrequencyUnit: "days" | "weeks" | "months") {
     const nextDue = new Date();
@@ -248,6 +257,37 @@ export default function RoomDetailPage() {
     nextDue.setDate(nextDue.getDate() + frequencyToDays(nextFrequencyValue, nextFrequencyUnit));
     return formatDateKey(nextDue);
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(`room:${roomId}:ui`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        taskListFilter: TaskListFilter;
+        periodWindow: PeriodWindow;
+      }>;
+      window.setTimeout(() => {
+        if (typeof parsed.taskListFilter === "string")
+          setTaskListFilter(parsed.taskListFilter as TaskListFilter);
+        if (typeof parsed.periodWindow === "string") setPeriodWindow(parsed.periodWindow as PeriodWindow);
+      }, 0);
+    } catch {
+      // ignore
+    }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        `room:${roomId}:ui`,
+        JSON.stringify({ taskListFilter, periodWindow }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [roomId, taskListFilter, periodWindow]);
 
   function setFrequencyAndDue(
     nextFrequencyValue: number,
@@ -518,9 +558,19 @@ export default function RoomDetailPage() {
     }
     setError(null);
     setMessage(null);
+    if (!task.next_due_date || task.next_due_date > todayDateOnly) {
+      return;
+    }
 
+    const choice = await new Promise<PostponeChoice | null>((resolve) => {
+      setPostponeTask(task);
+      setPostponeResolve(() => resolve);
+    });
+    if (!choice) return;
     const nextDue = new Date();
-    nextDue.setDate(nextDue.getDate() + task.frequency_days);
+    nextDue.setDate(
+      nextDue.getDate() + (choice === "tomorrow" ? 1 : Math.max(1, task.frequency_days)),
+    );
 
     const { error: updateError } = await supabaseClient
       .from("task")
@@ -536,7 +586,11 @@ export default function RoomDetailPage() {
     }
 
     setActiveActionTaskId(null);
-    setMessage("Task skipped. Due date moved forward with no points awarded.");
+    setMessage(
+      choice === "tomorrow"
+        ? "Task skipped until tomorrow. No points awarded."
+        : "Task skipped. Due date moved forward with no points awarded.",
+    );
     await loadRoomData();
   }
 
@@ -647,7 +701,7 @@ export default function RoomDetailPage() {
     setMessage(null);
     setCompletingTaskId(task.id);
 
-    await wait(2000);
+    await wait(1200);
 
     const { error: completeError } = await supabaseClient.from("task_history").insert({
       task_id: task.id,
@@ -756,10 +810,15 @@ export default function RoomDetailPage() {
     setDragTaskId(taskId);
     setDragStartX(clientX);
     setDragOffset(baseOffset);
+    dragOriginXRef.current = clientX;
+    dragHasMovedRef.current = false;
   }
 
   function handleTaskPointerMove(taskId: string, clientX: number) {
     if (dragTaskId !== taskId) return;
+    if (Math.abs(clientX - dragOriginXRef.current) > 6) {
+      dragHasMovedRef.current = true;
+    }
     const next = dragOffset + (clientX - dragStartX);
     const clamped = Math.min(0, Math.max(-SWIPE_ACTION_WIDTH, next));
     setDragOffset(clamped);
@@ -1122,6 +1181,7 @@ export default function RoomDetailPage() {
             const dueMeta = getDueMeta(task.next_due_date);
             const effortStars = Math.max(1, Math.min(3, Math.round(task.effort_points / 10)));
             const isDoneTask = doneTaskIds.has(task.id);
+            const canSkipTask = !!task.next_due_date && task.next_due_date <= todayDateOnly;
             const primaryAssigneeId =
               task.assigned_user_ids?.[0] || task.assigned_to || null;
             const assigneeProfile = primaryAssigneeId
@@ -1145,21 +1205,28 @@ export default function RoomDetailPage() {
                         setActiveActionTaskId(null);
                         openEditTaskModal(task);
                       }}
-                      className="flex w-1/3 items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white"
+                      className={`flex items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white ${
+                        canSkipTask ? "w-1/3" : "w-1/2"
+                      }`}
                     >
                       Edit
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSkipTask(task)}
-                      className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
-                    >
-                      Skip
-                    </button>
+                    {canSkipTask ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleSkipTask(task)}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
+                      >
+                        Skip
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void handleDeleteTask(task)}
-                      className="flex w-1/3 items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white"
+                      className={`flex items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white ${
+                        canSkipTask ? "w-1/3" : "w-1/2"
+                      }`}
                     >
                       Delete
                     </button>
@@ -1173,18 +1240,69 @@ export default function RoomDetailPage() {
                     touchAction: "pan-y",
                   }}
                   onPointerDown={
-                    canManageTasks ? (event) => handleTaskPointerDown(task.id, event.clientX) : undefined
+                    canManageTasks
+                      ? (event) => {
+                          const target = event.target as HTMLElement | null;
+                          if (target?.closest("a,button")) {
+                            return;
+                          }
+                          try {
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                          } catch {
+                            // ignore
+                          }
+                          handleTaskPointerDown(task.id, event.clientX);
+                        }
+                      : undefined
                   }
                   onPointerMove={
                     canManageTasks ? (event) => handleTaskPointerMove(task.id, event.clientX) : undefined
                   }
-                  onPointerUp={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
-                  onPointerCancel={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
+                  onPointerUp={
+                    canManageTasks
+                      ? (event) => {
+                          try {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          } catch {
+                            // ignore
+                          }
+                          handleTaskPointerEnd(task.id);
+                        }
+                      : undefined
+                  }
+                  onPointerCancel={
+                    canManageTasks
+                      ? (event) => {
+                          try {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          } catch {
+                            // ignore
+                          }
+                          handleTaskPointerEnd(task.id);
+                        }
+                      : undefined
+                  }
                 >
                   <div className="mb-3 flex items-start justify-between">
                     <div>
                       <h4 className="font-bold text-slate-900">
-                        <Link href={`/tasks/${task.id}`} className="hover:text-teal-700">
+                        <Link
+                          href={`/tasks/${task.id}`}
+                          scroll={false}
+                          className="hover:text-teal-700"
+                          onClick={(event) => {
+                            if (
+                              canManageTasks &&
+                              (activeActionTaskId === task.id ||
+                                (dragTaskId === task.id && dragHasMovedRef.current))
+                            ) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              return;
+                            }
+                            saveRoomScroll();
+                          }}
+                        >
                           {task.name}
                         </Link>
                       </h4>
@@ -1686,6 +1804,21 @@ export default function RoomDetailPage() {
           </form>
         </div>
       )}
+
+      <PostponeSkipModal
+        open={!!postponeTask}
+        taskName={postponeTask?.name ?? "this task"}
+        onChoose={(choice) => {
+          postponeResolve?.(choice);
+          setPostponeResolve(null);
+          setPostponeTask(null);
+        }}
+        onClose={() => {
+          postponeResolve?.(null);
+          setPostponeResolve(null);
+          setPostponeTask(null);
+        }}
+      />
     </main>
   );
 }

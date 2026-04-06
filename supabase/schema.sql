@@ -300,6 +300,7 @@ declare
   v_last_seen_travel_offset integer;
   v_current_streak integer;
   v_total_travel_offset integer;
+  v_house_timezone text;
   v_completion_date date;
   v_raw_gap integer;
   v_travel_gap integer;
@@ -317,10 +318,19 @@ begin
     raise exception 'Task not found for task_history row %', new.id;
   end if;
 
+  -- Use the house timezone for "today" boundaries so streak increments
+  -- match the home's local day instead of UTC.
+  select h.travel_offset_days, h.timezone
+    into v_total_travel_offset, v_house_timezone
+  from public.house h
+  where h.id = v_house_id;
+
+  v_completion_date := (new.completed_at at time zone coalesce(v_house_timezone, 'UTC'))::date;
+
   update public.task
   set
     last_completed_at = new.completed_at,
-    next_due_date = (new.completed_at::date + (v_frequency || ' days')::interval)::date
+    next_due_date = (v_completion_date + v_frequency)
   where id = new.task_id;
 
   -- Lock membership row to keep streak updates consistent during concurrent completions.
@@ -337,12 +347,7 @@ begin
     and b.house_id = v_house_id
   for update;
 
-  select h.travel_offset_days
-    into v_total_travel_offset
-  from public.house h
-  where h.id = v_house_id;
-
-  v_completion_date := new.completed_at::date;
+  -- v_total_travel_offset is loaded above from public.house.
   -- New streak rules:
   -- 1) If user has ANY overdue assigned tasks, streak resets to 1.
   -- 2) Streak only increments when user has finished ALL assigned due/overdue tasks for the day.

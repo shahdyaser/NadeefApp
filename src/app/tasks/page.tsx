@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { getViewCache, setViewCache } from "@/lib/view-cache";
+import { useScrollRestoration } from "@/lib/scroll-restoration";
 import BottomNav from "@/components/bottom-nav";
+import PostponeSkipModal, { type PostponeChoice } from "@/components/postpone-skip-modal";
 import TaskEditorModal, {
   type TaskEditorMemberOption,
   type TaskEditorValues,
@@ -126,7 +128,7 @@ type TasksCachePayload = {
 };
 const TASKS_CACHE_KEY = "tasks";
 const SWIPE_ACTION_WIDTH = 204;
-type DueDateFilter = "all" | "overdue" | "today" | "week" | "month" | "later";
+type DueDateFilter = "all" | "overdue" | "today" | "tomorrow" | "week" | "month" | "later";
 
 function initialsFromName(name: string) {
   return (
@@ -140,6 +142,7 @@ function initialsFromName(name: string) {
 }
 
 export default function TasksPage() {
+  const saveTasksScroll = useScrollRestoration("tasks");
   const router = useRouter();
   const cachedTasks = useMemo(
     () => getViewCache<TasksCachePayload>(TASKS_CACHE_KEY),
@@ -159,6 +162,10 @@ export default function TasksPage() {
   const [canManageTasks, setCanManageTasks] = useState(cachedTasks?.canManageTasks ?? false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [postponeTask, setPostponeTask] = useState<TaskRow | null>(null);
+  const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
+    null,
+  );
   const [rooms, setRooms] = useState<RoomRow[]>(cachedTasks?.rooms ?? []);
   const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>(cachedTasks?.tasksWithRoom ?? []);
   const [members, setMembers] = useState<TaskEditorMemberOption[]>(cachedTasks?.members ?? []);
@@ -174,6 +181,48 @@ export default function TasksPage() {
   const [selectedRoomFilter, setSelectedRoomFilter] = useState("all");
   const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState("all");
   const [selectedDueDateFilter, setSelectedDueDateFilter] = useState<DueDateFilter>("all");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem("tasks:ui");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        showFilters: boolean;
+        selectedRoomFilter: string;
+        selectedAssigneeFilter: string;
+        selectedDueDateFilter: DueDateFilter;
+      }>;
+      // Defer to avoid cascading renders lint (and to keep hydration stable).
+      window.setTimeout(() => {
+        if (typeof parsed.showFilters === "boolean") setShowFilters(parsed.showFilters);
+        if (typeof parsed.selectedRoomFilter === "string") setSelectedRoomFilter(parsed.selectedRoomFilter);
+        if (typeof parsed.selectedAssigneeFilter === "string")
+          setSelectedAssigneeFilter(parsed.selectedAssigneeFilter);
+        if (typeof parsed.selectedDueDateFilter === "string")
+          setSelectedDueDateFilter(parsed.selectedDueDateFilter as DueDateFilter);
+      }, 0);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        "tasks:ui",
+        JSON.stringify({
+          showFilters,
+          selectedRoomFilter,
+          selectedAssigneeFilter,
+          selectedDueDateFilter,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [showFilters, selectedRoomFilter, selectedAssigneeFilter, selectedDueDateFilter]);
 
   const loadTasks = useCallback(async () => {
       if (!supabaseClient) {
@@ -328,7 +377,7 @@ export default function TasksPage() {
     if (!supabaseClient || !userId || completingTaskId) return;
     setError(null);
     setCompletingTaskId(task.id);
-    await wait(2000);
+    await wait(1200);
 
     const { error: completeError } = await supabaseClient.from("task_history").insert({
       task_id: task.id,
@@ -351,8 +400,21 @@ export default function TasksPage() {
   async function handleSkipTask(task: TaskRow) {
     if (!supabaseClient || !canManageTasks) return;
     setError(null);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (!task.next_due_date || task.next_due_date > todayIso) {
+      return;
+    }
+
+    const choice = await new Promise<PostponeChoice | null>((resolve) => {
+      setPostponeTask(task);
+      setPostponeResolve(() => resolve);
+    });
+    if (!choice) return;
+
     const nextDue = new Date();
-    nextDue.setDate(nextDue.getDate() + Math.max(1, task.frequency_days));
+    nextDue.setDate(
+      nextDue.getDate() + (choice === "tomorrow" ? 1 : Math.max(1, task.frequency_days)),
+    );
     const { error: skipError } = await supabaseClient
       .from("task")
       .update({
@@ -463,12 +525,20 @@ export default function TasksPage() {
         return diff === 0;
       })(),
   );
+  const dueTomorrowTasks = filteredTasksWithRoom.filter(
+    (row) =>
+      row.task.status === "active" &&
+      (() => {
+        const diff = daysUntil(row.task.next_due_date, todayDate);
+        return diff === 1;
+      })(),
+  );
   const thisWeekTasks = filteredTasksWithRoom.filter(
     (row) =>
       row.task.status === "active" &&
       (() => {
         const diff = daysUntil(row.task.next_due_date, todayDate);
-        return diff !== null && diff >= 1 && diff <= 7;
+        return diff !== null && diff >= 2 && diff <= 7;
       })(),
   );
   const thisMonthTasks = filteredTasksWithRoom.filter(
@@ -513,6 +583,13 @@ export default function TasksPage() {
       fallback: "No tasks due today.",
     },
     {
+      key: "tomorrow",
+      title: "Due Tomorrow",
+      tone: "due",
+      items: dueTomorrowTasks,
+      fallback: "No tasks due tomorrow.",
+    },
+    {
       key: "week",
       title: "This Week",
       tone: "week",
@@ -543,11 +620,11 @@ export default function TasksPage() {
       ? taskSections
       : selectedDueDateFilter === "week"
         ? taskSections.filter((section) =>
-            ["overdue", "today", "week"].includes(section.key),
+            ["overdue", "today", "tomorrow", "week"].includes(section.key),
           )
         : selectedDueDateFilter === "month"
           ? taskSections.filter((section) =>
-              ["overdue", "today", "week", "month"].includes(section.key),
+              ["overdue", "today", "tomorrow", "week", "month"].includes(section.key),
             )
           : taskSections.filter((section) => section.key === selectedDueDateFilter);
   const sectionsToRender = hasActiveFilters
@@ -717,6 +794,7 @@ export default function TasksPage() {
                   <option value="all">All due dates</option>
                   <option value="overdue">Overdue</option>
                   <option value="today">Due today</option>
+                  <option value="tomorrow">Due tomorrow</option>
                   <option value="week">This week</option>
                   <option value="month">This month</option>
                   <option value="later">Later</option>
@@ -759,6 +837,7 @@ export default function TasksPage() {
                 onEditTask={openEditTaskModal}
                 onSkipTask={handleSkipTask}
                 onDeleteTask={handleDeleteTask}
+                onNavigateTask={saveTasksScroll}
                 canManageTasks={canManageTasks}
                 memberProfiles={memberProfiles}
               />
@@ -783,6 +862,21 @@ export default function TasksPage() {
         onSave={handleSaveTaskEdit}
       />
 
+      <PostponeSkipModal
+        open={!!postponeTask}
+        taskName={postponeTask?.name ?? "this task"}
+        onChoose={(choice) => {
+          postponeResolve?.(choice);
+          setPostponeResolve(null);
+          setPostponeTask(null);
+        }}
+        onClose={() => {
+          postponeResolve?.(null);
+          setPostponeResolve(null);
+          setPostponeTask(null);
+        }}
+      />
+
       <BottomNav />
     </main>
   );
@@ -797,6 +891,7 @@ function TaskGroup({
   onEditTask,
   onSkipTask,
   onDeleteTask,
+  onNavigateTask,
   canManageTasks,
   completingTaskId,
   memberProfiles,
@@ -809,6 +904,7 @@ function TaskGroup({
   onEditTask: (task: TaskRow) => void;
   onSkipTask: (task: TaskRow) => void;
   onDeleteTask: (task: TaskRow) => void;
+  onNavigateTask: () => void;
   canManageTasks: boolean;
   completingTaskId: string | null;
   memberProfiles: Record<string, MemberProfile>;
@@ -835,6 +931,8 @@ function TaskGroup({
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragOffset, setDragOffset] = useState(0);
+  const dragOriginXRef = useRef(0);
+  const dragHasMovedRef = useRef(false);
   const groupedByRoom = useMemo(() => {
     const groups = new Map<string, { roomLabel: string; rows: TaskWithRoom[] }>();
     for (const row of items) {
@@ -855,10 +953,15 @@ function TaskGroup({
     setDragTaskId(taskId);
     setDragStartX(clientX);
     setDragOffset(baseOffset);
+    dragOriginXRef.current = clientX;
+    dragHasMovedRef.current = false;
   }
 
   function handleTaskPointerMove(taskId: string, clientX: number) {
     if (dragTaskId !== taskId) return;
+    if (Math.abs(clientX - dragOriginXRef.current) > 6) {
+      dragHasMovedRef.current = true;
+    }
     const next = dragOffset + (clientX - dragStartX);
     const clamped = Math.min(0, Math.max(-SWIPE_ACTION_WIDTH, next));
     setDragOffset(clamped);
@@ -899,6 +1002,9 @@ function TaskGroup({
                 const profile = assigneeId ? memberProfiles[assigneeId] : undefined;
                 const label = profile?.display_name?.trim() || "Unassigned";
                 const initials = initialsFromName(label);
+                const todayIso = new Date().toISOString().slice(0, 10);
+                const canSkipTask =
+                  !!task.next_due_date && task.next_due_date <= todayIso;
 
                 return (
                   <div key={task.id} className="relative overflow-hidden rounded-xl">
@@ -910,27 +1016,34 @@ function TaskGroup({
                             setActiveActionTaskId(null);
                             onEditTask(task);
                           }}
-                          className="flex w-1/3 items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white"
+                          className={`flex items-center justify-center bg-amber-500 text-xs font-bold uppercase tracking-wide text-white ${
+                            canSkipTask ? "w-1/3" : "w-1/2"
+                          }`}
                         >
                           Edit
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveActionTaskId(null);
-                            void onSkipTask(task);
-                          }}
-                          className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
-                        >
-                          Skip
-                        </button>
+                        {canSkipTask ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveActionTaskId(null);
+                              void onSkipTask(task);
+                            }}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            className="flex w-1/3 items-center justify-center bg-teal-700 text-xs font-bold uppercase tracking-wide text-white"
+                          >
+                            Skip
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => {
                             setActiveActionTaskId(null);
                             void onDeleteTask(task);
                           }}
-                          className="flex w-1/3 items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white"
+                          className={`flex items-center justify-center bg-red-600 text-xs font-bold uppercase tracking-wide text-white ${
+                            canSkipTask ? "w-1/3" : "w-1/2"
+                          }`}
                         >
                           Delete
                         </button>
@@ -951,13 +1064,48 @@ function TaskGroup({
                         touchAction: "pan-y",
                       }}
                       onPointerDown={
-                        canManageTasks ? (event) => handleTaskPointerDown(task.id, event.clientX) : undefined
+                        canManageTasks
+                          ? (event) => {
+                              const target = event.target as HTMLElement | null;
+                              if (target?.closest("a,button")) {
+                                return;
+                              }
+                              try {
+                                event.currentTarget.setPointerCapture(event.pointerId);
+                              } catch {
+                                // ignore
+                              }
+                              handleTaskPointerDown(task.id, event.clientX);
+                            }
+                          : undefined
                       }
                       onPointerMove={
                         canManageTasks ? (event) => handleTaskPointerMove(task.id, event.clientX) : undefined
                       }
-                      onPointerUp={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
-                      onPointerCancel={canManageTasks ? () => handleTaskPointerEnd(task.id) : undefined}
+                      onPointerUp={
+                        canManageTasks
+                          ? (event) => {
+                              try {
+                                event.currentTarget.releasePointerCapture(event.pointerId);
+                              } catch {
+                                // ignore
+                              }
+                              handleTaskPointerEnd(task.id);
+                            }
+                          : undefined
+                      }
+                      onPointerCancel={
+                        canManageTasks
+                          ? (event) => {
+                              try {
+                                event.currentTarget.releasePointerCapture(event.pointerId);
+                              } catch {
+                                // ignore
+                              }
+                              handleTaskPointerEnd(task.id);
+                            }
+                          : undefined
+                      }
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
@@ -966,7 +1114,20 @@ function TaskGroup({
                         <div className="min-w-0">
                           <Link
                             href={`/tasks/${task.id}`}
+                            scroll={false}
                             className="truncate text-xs font-bold text-slate-900 hover:text-teal-700"
+                            onClick={(event) => {
+                              if (
+                                canManageTasks &&
+                                (activeActionTaskId === task.id ||
+                                  (dragTaskId === task.id && dragHasMovedRef.current))
+                              ) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                return;
+                              }
+                              onNavigateTask();
+                            }}
                           >
                             {task.name}
                           </Link>

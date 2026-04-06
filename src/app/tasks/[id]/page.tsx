@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import BottomNav from "@/components/bottom-nav";
+import PostponeSkipModal, { type PostponeChoice } from "@/components/postpone-skip-modal";
 import TaskEditorModal, {
   type TaskEditorMemberOption,
   type TaskEditorValues,
@@ -87,6 +88,9 @@ export default function TaskDetailPage() {
   const [members, setMembers] = useState<TaskEditorMemberOption[]>([]);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
   const [showEditModal, setShowEditModal] = useState(false);
+  const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
+    null,
+  );
 
   async function loadTaskDetail() {
     if (!supabaseClient) {
@@ -208,8 +212,14 @@ export default function TaskDetailPage() {
 
   async function handleSkip() {
     if (!supabaseClient || !task || !canManageTasks) return;
+    const today = toDateKey(new Date());
+    if (!task.next_due_date || task.next_due_date > today) return;
+    const choice = await new Promise<PostponeChoice | null>((resolve) => {
+      setPostponeResolve(() => resolve);
+    });
+    if (!choice) return;
     const next = new Date();
-    next.setDate(next.getDate() + Math.max(1, task.frequency_days));
+    next.setDate(next.getDate() + (choice === "tomorrow" ? 1 : Math.max(1, task.frequency_days)));
     const { error: skipError } = await supabaseClient
       .from("task")
       .update({
@@ -221,7 +231,7 @@ export default function TaskDetailPage() {
       setError(skipError.message);
       return;
     }
-    setMessage("Task skipped.");
+    setMessage(choice === "tomorrow" ? "Task skipped until tomorrow." : "Task skipped.");
     await loadTaskDetail();
   }
 
@@ -285,6 +295,7 @@ export default function TaskDetailPage() {
   const today = toDateKey(new Date());
   const showNadeefButton =
     task.status === "active" && !!task.next_due_date && task.next_due_date <= today;
+  const canSkipTask = showNadeefButton;
   const taskStatusLabel =
     task.status !== "active"
       ? "Paused"
@@ -377,7 +388,7 @@ export default function TaskDetailPage() {
             <button
               type="button"
               onClick={() => void handleSkip()}
-              disabled={!canManageTasks}
+              disabled={!canManageTasks || !canSkipTask}
               className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
             >
               Skip
@@ -452,7 +463,9 @@ export default function TaskDetailPage() {
                   );
                   return (
                     <tr key={item.id} className="border-t border-slate-200">
-                      <td className="px-3 py-2">{formatDateTime(item.completed_at)}</td>
+                      <td className="px-3 py-2" suppressHydrationWarning>
+                        {formatDateTime(item.completed_at)}
+                      </td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-2">
                           <span
@@ -507,6 +520,19 @@ export default function TaskDetailPage() {
         saving={saving}
         onClose={() => setShowEditModal(false)}
         onSave={handleSaveEdit}
+      />
+
+      <PostponeSkipModal
+        open={!!task && !!postponeResolve}
+        taskName={task?.name ?? "this task"}
+        onChoose={(choice) => {
+          postponeResolve?.(choice);
+          setPostponeResolve(null);
+        }}
+        onClose={() => {
+          postponeResolve?.(null);
+          setPostponeResolve(null);
+        }}
       />
 
       <BottomNav />

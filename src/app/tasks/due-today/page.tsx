@@ -341,7 +341,7 @@ function DueTodayPageContent() {
     setMessage(null);
     setCompletingTaskId(task.id);
 
-    await wait(2000);
+    await wait(1200);
 
     let uid = userId;
     if (!uid) {
