@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 function safeParseInt(value: string | null) {
   if (!value) return null;
@@ -7,19 +7,15 @@ function safeParseInt(value: string | null) {
   return Number.isFinite(n) ? n : null;
 }
 
-function getStorageKey(prefix: string, pathname: string, search: string) {
-  const base = `${prefix}:${pathname}`;
-  return search ? `${base}?${search}` : base;
+function getStorageKey(prefix: string, pathname: string) {
+  return `${prefix}:${pathname}`;
 }
 
 export function useScrollRestoration(prefix: string) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const search = useMemo(() => searchParams?.toString() ?? "", [searchParams]);
   const key = useMemo(
-    () => getStorageKey(prefix, pathname ?? "", search),
-    [prefix, pathname, search],
+    () => getStorageKey(prefix, pathname ?? ""),
+    [prefix, pathname],
   );
 
   const restoredRef = useRef(false);
