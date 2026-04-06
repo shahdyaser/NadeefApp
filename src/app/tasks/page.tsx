@@ -144,10 +144,6 @@ function initialsFromName(name: string) {
 export default function TasksPage() {
   const saveTasksScroll = useScrollRestoration("tasks");
   const router = useRouter();
-  const cachedTasks = useMemo(
-    () => getViewCache<TasksCachePayload>(TASKS_CACHE_KEY),
-    [],
-  );
   const supabaseClient = useMemo(() => {
     try {
       return getSupabaseBrowserClient();
@@ -156,31 +152,49 @@ export default function TasksPage() {
     }
   }, []);
 
-  const [loading, setLoading] = useState(!cachedTasks);
+  // NOTE: Don't read sessionStorage cache during render; it causes SSR/client
+  // HTML mismatches and triggers hydration failures.
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(cachedTasks?.userId ?? null);
-  const [canManageTasks, setCanManageTasks] = useState(cachedTasks?.canManageTasks ?? false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [canManageTasks, setCanManageTasks] = useState(false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
   const [postponeTask, setPostponeTask] = useState<TaskRow | null>(null);
   const [postponeResolve, setPostponeResolve] = useState<((choice: PostponeChoice | null) => void) | null>(
     null,
   );
-  const [rooms, setRooms] = useState<RoomRow[]>(cachedTasks?.rooms ?? []);
-  const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>(cachedTasks?.tasksWithRoom ?? []);
-  const [members, setMembers] = useState<TaskEditorMemberOption[]>(cachedTasks?.members ?? []);
-  const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>(
-    cachedTasks?.memberProfiles ?? {},
-  );
-  const [freshness, setFreshness] = useState(cachedTasks?.freshness ?? 0);
-  const [doneToday, setDoneToday] = useState(cachedTasks?.doneToday ?? 0);
-  const [dueToday, setDueToday] = useState(cachedTasks?.dueToday ?? 0);
-  const [overdue, setOverdue] = useState(cachedTasks?.overdue ?? 0);
+  const [rooms, setRooms] = useState<RoomRow[]>([]);
+  const [tasksWithRoom, setTasksWithRoom] = useState<TaskWithRoom[]>([]);
+  const [members, setMembers] = useState<TaskEditorMemberOption[]>([]);
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
+  const [freshness, setFreshness] = useState(0);
+  const [doneToday, setDoneToday] = useState(0);
+  const [dueToday, setDueToday] = useState(0);
+  const [overdue, setOverdue] = useState(0);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedRoomFilter, setSelectedRoomFilter] = useState("all");
   const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState("all");
   const [selectedDueDateFilter, setSelectedDueDateFilter] = useState<DueDateFilter>("all");
+
+  useEffect(() => {
+    const cached = getViewCache<TasksCachePayload>(TASKS_CACHE_KEY);
+    if (!cached) return;
+    window.setTimeout(() => {
+      setUserId(cached.userId ?? null);
+      setCanManageTasks(Boolean(cached.canManageTasks));
+      setRooms(cached.rooms ?? []);
+      setTasksWithRoom(cached.tasksWithRoom ?? []);
+      setMembers(cached.members ?? []);
+      setMemberProfiles(cached.memberProfiles ?? {});
+      setFreshness(cached.freshness ?? 0);
+      setDoneToday(cached.doneToday ?? 0);
+      setDueToday(cached.dueToday ?? 0);
+      setOverdue(cached.overdue ?? 0);
+      setLoading(false);
+    }, 0);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
